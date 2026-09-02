@@ -1,0 +1,3 @@
+# OurRankTracker is a private application; keep it out of search results.
+User-agent: *
+Disallow: /

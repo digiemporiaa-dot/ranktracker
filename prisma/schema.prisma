@@ -1,0 +1,148 @@
+// OurRankTracker — Prisma schema
+// Datasource: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Device {
+  DESKTOP
+  MOBILE
+}
+
+enum RankCheckStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  isDemo       Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  projects Project[]
+  sessions Session[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  /// Normalized registrable host, e.g. "wroffy.com"
+  domain    String
+  country   String   @default("IN")
+  language  String   @default("en")
+  device    Device   @default(DESKTOP)
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keywords   Keyword[]
+  rankChecks RankCheck[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model Keyword {
+  id        String   @id @default(cuid())
+  projectId String
+  keyword   String
+  targetUrl String?
+  country   String   @default("IN")
+  language  String   @default("en")
+  device    Device   @default(DESKTOP)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rankings Ranking[]
+
+  // A keyword is unique per project + locale + device combination.
+  @@unique([projectId, keyword, country, language, device])
+  @@index([projectId])
+  @@index([projectId, active])
+}
+
+model Ranking {
+  id         String   @id @default(cuid())
+  keywordId  String
+  /// 1..depth, or null when the domain was not found in the checked results.
+  position   Int?
+  rankingUrl String?
+  /// Total organic results inspected for this check.
+  resultsChecked Int?
+  rankCheckId String?
+  checkedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  keyword   Keyword    @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  rankCheck RankCheck? @relation(fields: [rankCheckId], references: [id], onDelete: SetNull)
+
+  @@index([keywordId])
+  @@index([checkedAt])
+  @@index([keywordId, checkedAt])
+  @@index([rankCheckId])
+}
+
+model RankCheck {
+  id                String          @id @default(cuid())
+  projectId         String
+  status            RankCheckStatus @default(PENDING)
+  totalKeywords     Int             @default(0)
+  completedKeywords Int             @default(0)
+  failedKeywords    Int             @default(0)
+  /// User-safe message, e.g. why the run failed. Never contains provider internals.
+  message           String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rankings Ranking[]
+
+  @@index([projectId])
+  @@index([status])
+  @@index([projectId, createdAt])
+}
+
+/// Short-lived SERP response cache, keyed by keyword+country+language+device+depth.
+model SerpCache {
+  id        String   @id @default(cuid())
+  cacheKey  String   @unique
+  payload   Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}

@@ -344,38 +344,103 @@ running as a non-root user, with a health check against `/api/health`.
 
 ## Coolify deployment
 
-1. **Connect the repository.** In Coolify, create a new resource and choose
-   *Private/Public Repository*, pointing at this repository and branch.
-2. **Use the Dockerfile.** Set the build pack to **Dockerfile**. Coolify will
-   use the `Dockerfile` in the repository root.
-3. **Configure PostgreSQL.** Add a PostgreSQL database resource in the same
-   project, then copy its internal connection string.
-4. **Add environment variables** on the application resource:
+Deploying on a VPS with Coolify. You need a domain pointed at the server —
+session cookies are `Secure` in production, so sign-in does not work over plain
+HTTP.
 
-   ```env
-   DATABASE_URL=postgresql://user:password@host:5432/database?schema=public
-   SESSION_SECRET=<openssl rand -base64 48>
-   DATAFORSEO_LOGIN=<your login>
-   DATAFORSEO_PASSWORD=<your password>
-   SERP_CONCURRENCY=3
-   MAX_KEYWORDS_PER_CHECK=500
-   SERP_RESULTS=100
-   SERP_CACHE_MINUTES=30
-   ```
+### 1. Point DNS at the VPS
 
-   Mark them as build-time *and* runtime variables where Coolify distinguishes
-   the two. Do not prefix any of them with `NEXT_PUBLIC_`.
-5. **Run the migration.** The container entrypoint runs `prisma migrate deploy`
-   on every start, so the schema is created on the first deploy. To run it by
-   hand instead, set `RUN_MIGRATIONS=0` and execute
-   `./node_modules/.bin/prisma migrate deploy` in the container terminal.
-6. **Deploy.** Set the exposed port to `3000`. The health check path is
-   `/api/health`.
-7. **Connect a domain.** Add your domain under the application's *Domains*
-   setting and point a DNS `A` record at the server.
-8. **Enable HTTPS.** Turn on Coolify's automatic Let's Encrypt certificate.
-   Session cookies are marked `Secure` whenever `NODE_ENV=production`, so HTTPS
-   is required for sign-in to work in production.
+Add an `A` record for your domain (or subdomain) to the VPS IP address, and wait
+for it to resolve:
+
+```bash
+dig +short rank.example.com    # should print your VPS IP
+```
+
+### 2. Create the PostgreSQL database
+
+In your Coolify project: **+ New → Database → PostgreSQL**. Once it is running,
+open it and copy the **internal** connection URL (the one using the service
+hostname, not `localhost`). It looks like:
+
+```text
+postgresql://postgres:PASSWORD@rn4c8s0ok:5432/postgres
+```
+
+Append `?schema=public` when you use it as `DATABASE_URL`.
+
+### 3. Create the application
+
+**+ New → Application → Public/Private Repository**, pointing at this repository
+and the `main` branch. Then set:
+
+| Setting          | Value        |
+| ---------------- | ------------ |
+| Build pack       | `Dockerfile` |
+| Dockerfile path  | `Dockerfile` |
+| Port             | `3000`       |
+| Health check path| `/api/health`|
+
+### 4. Set environment variables
+
+These are **runtime** variables. The Docker build supplies its own placeholders
+for `DATABASE_URL` and `SESSION_SECRET`, so the build does not need the real
+values and no secret is ever baked into the image.
+
+```env
+DATABASE_URL=postgresql://postgres:PASSWORD@HOST:5432/postgres?schema=public
+SESSION_SECRET=<paste the output of: openssl rand -base64 48>
+DATAFORSEO_LOGIN=<your DataForSEO API login>
+DATAFORSEO_PASSWORD=<your DataForSEO API password>
+SERP_CONCURRENCY=3
+MAX_KEYWORDS_PER_CHECK=500
+SERP_RESULTS=100
+SERP_CACHE_MINUTES=30
+```
+
+Never prefix any of these with `NEXT_PUBLIC_` — that would publish them to the
+browser.
+
+### 5. Add the domain and enable HTTPS
+
+Under the application's **Domains**, enter `https://rank.example.com`. Coolify
+requests a Let's Encrypt certificate automatically. Confirm the scheme is
+`https://`, not `http://`.
+
+### 6. Deploy
+
+Press **Deploy**. On the first run the entrypoint applies the database
+migrations before the server starts, so the schema is created for you — watch
+the deploy log for:
+
+```text
+Applying database migrations...
+The following migration(s) have been applied:
+  20260902090522_init
+ ✓ Ready
+```
+
+To apply migrations manually instead, set `RUN_MIGRATIONS=0` and run this in the
+container terminal:
+
+```bash
+node /opt/prisma-cli/node_modules/prisma/build/index.js migrate deploy
+```
+
+### 7. Verify
+
+```bash
+curl https://rank.example.com/api/health
+# {"status":"ok","database":true,"serpProviderConfigured":true,...}
+```
+
+`database: true` means migrations ran and the connection works.
+`serpProviderConfigured: true` means the DataForSEO credentials are present.
+
+Then open `https://rank.example.com/register`, create your account, and run one
+real keyword check to confirm the provider integration end to end.
+
+Redeploys are automatic on push to `main` if you enable Coolify's webhook.
 
 ---
 
@@ -504,7 +569,21 @@ HTTPS. Enable TLS, or run with `NODE_ENV=development` locally.
 
 **`prisma migrate deploy` fails on startup**
 The database is unreachable or `DATABASE_URL` is wrong. Check the value and that
-the database accepts connections from the application container.
+the database accepts connections from the application container. On Coolify use
+the database's **internal** connection URL — the one with the service hostname,
+not `localhost` — and remember to append `?schema=public`.
+
+**On Coolify the deploy succeeds but the container keeps restarting**
+The entrypoint applies migrations before starting the server and runs under
+`set -e`, so a database problem stops the container rather than serving a broken
+app. Read the deploy log: the line after `Applying database migrations...` names
+the cause. Set `RUN_MIGRATIONS=0` to start the app without migrating while you
+investigate.
+
+**Coolify shows the app as unhealthy**
+The health check path must be `/api/health` and the port `3000`. Calling that
+path returns `{"status":"ok","database":true,...}`; `database: false` means the
+server is up but cannot reach PostgreSQL.
 
 **A ranking check finishes as `PARTIAL`**
 Some keywords failed after their retries. The check reports how many; run it
@@ -539,9 +618,15 @@ which is lower than the visual position on a SERP that shows ads.
 - **No scheduled checks.** Checks are started manually; there is no cron.
 - **Ranking history is unbounded.** Every check appends rows. A retention policy
   would be needed for long-running installations.
-- **The Docker image build has not been verified in this environment** because
-  the base image registry was unreachable from it. The standalone server output
-  that the image runs was verified directly.
+- **The Docker image has not been built end to end** because the base-image
+  registry was unreachable from the environment it was developed in. Everything
+  the image does was verified separately, though: `npm ci`, `prisma generate`
+  and `npm run build` were run from a clean clone with the same environment the
+  builder stage sets, and the runtime layer was assembled exactly as the
+  Dockerfile assembles it and booted in isolation — migrations applied to an
+  empty database, and register / create project / add keywords / dashboard all
+  worked. The first real `docker build` may still surface something these
+  checks cannot reach, such as a base-image or apt package problem.
 - **The live DataForSEO integration has not been exercised against the real API**
   from this environment, which cannot reach `api.dataforseo.com`. Run
   `npm run dataforseo:check` on a machine with network access as the first step

@@ -202,6 +202,9 @@ export function parseKeywordList(
 export function toCsv(headers: string[], rows: (string | number | null)[][]): string {
   const escapeCell = (value: string | number | null): string => {
     if (value === null || value === undefined) return '';
+    // A real number is never a formula, so negative values stay readable as
+    // "-2" rather than being quoted into "'-2". Only text is de-fanged.
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
     const asString = sanitizeCsvValue(String(value));
     if (/[",\r\n]/.test(asString)) return `"${asString.replace(/"/g, '""')}"`;
     return asString;

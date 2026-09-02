@@ -233,3 +233,36 @@ describe('toCsv', () => {
     expect(csv.trim().split('\r\n')[1]).toBe('x,');
   });
 });
+
+describe('toCsv — numbers vs text', () => {
+  it('writes negative numbers plainly, since a number is not a formula', () => {
+    const csv = toCsv(['keyword', 'change'], [['azure reseller india', -2]]);
+    expect(csv.trim().split('\r\n')[1]).toBe('azure reseller india,-2');
+  });
+
+  it('matches the documented export shape', () => {
+    const csv = toCsv(
+      ['keyword', 'position', 'change', 'ranking_url', 'checked_at'],
+      [
+        ['microsoft reseller india', 4, 3, 'https://wroffy.com/microsoft', '2026-09-02T14:30:00'],
+        ['azure reseller india', 8, -2, 'https://wroffy.com/azure', '2026-09-02T14:31:00'],
+      ],
+    );
+    expect(csv.trim().split('\r\n')).toEqual([
+      'keyword,position,change,ranking_url,checked_at',
+      'microsoft reseller india,4,3,https://wroffy.com/microsoft,2026-09-02T14:30:00',
+      'azure reseller india,8,-2,https://wroffy.com/azure,2026-09-02T14:31:00',
+    ]);
+  });
+
+  it('still de-fangs a formula that merely looks numeric', () => {
+    // Text, not a number — so it is neutralized.
+    const csv = toCsv(['change'], [['-2+cmd()']]);
+    expect(csv).toContain("'-2+cmd()");
+  });
+
+  it('de-fangs a non-finite number defensively', () => {
+    const csv = toCsv(['n'], [[Number.NaN]]);
+    expect(csv.trim().split('\r\n')[1]).toBe('NaN');
+  });
+});

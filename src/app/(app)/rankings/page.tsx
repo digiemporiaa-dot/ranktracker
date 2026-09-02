@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/api';
 import { decorate, getKeywordRows, summarize } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
+import { ProjectSwitcher } from '@/components/project-switcher';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { StatsCards } from '@/components/stats-cards';
@@ -77,20 +77,9 @@ export default async function RankingsPage({ searchParams }: Search) {
         description={`${selected.domain} · Last checked: ${formatDateTime(lastCheckedAt)}`}
         actions={
           <>
-            <form className="w-full sm:w-56">
-              <Select name="project" defaultValue={selected.id} aria-label="Project">
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </Select>
-              <noscript>
-                <Button type="submit" size="sm" className="mt-2">
-                  Switch
-                </Button>
-              </noscript>
-            </form>
+            {projects.length > 1 ? (
+              <ProjectSwitcher projects={projects} selectedId={selected.id} />
+            ) : null}
             {hasRankings ? (
               <Button variant="outline" asChild>
                 <a href={`/api/projects/${selected.id}/export`}>

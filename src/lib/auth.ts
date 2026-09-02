@@ -13,6 +13,15 @@ export const SESSION_COOKIE = 'ort_session';
 const SESSION_TTL_DAYS = 30;
 const BCRYPT_ROUNDS = 12;
 
+/**
+ * A real bcrypt hash at the same cost as a live one, compared against when no
+ * user matches so that a missing account takes the same time as a wrong
+ * password. Comparing against a malformed hash would return instantly and
+ * leak which email addresses have accounts.
+ */
+const TIMING_EQUALIZER_HASH =
+  '$2b$12$6TT437h3ivv4mOSv4Szeuuf8wqI9VDx9NIkmMTpTeGWZhxP6fdd2m';
+
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
@@ -111,4 +120,13 @@ export function safeEqual(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Spend the same time as a real password check when no user was found.
+ * Always resolves false.
+ */
+export async function equalizeFailedLogin(password: string): Promise<false> {
+  await verifyPassword(password, TIMING_EQUALIZER_HASH);
+  return false;
 }

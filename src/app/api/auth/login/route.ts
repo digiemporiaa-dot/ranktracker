@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
-import { createSession, verifyPassword } from '@/lib/auth';
+import { createSession, equalizeFailedLogin, verifyPassword } from '@/lib/auth';
 import { ApiError, clientKey, parseBody, route } from '@/lib/api';
 import { rateLimit } from '@/lib/rate-limit';
 import { loginSchema } from '@/lib/validation';
@@ -22,8 +22,9 @@ export async function POST(request: Request) {
     const invalid = new ApiError(401, 'Incorrect email or password.');
 
     if (!user) {
-      // Spend comparable time so a missing user is not measurably faster.
-      await verifyPassword(password, '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinv');
+      // Spend the same time as a real check, so a missing account is not
+      // measurably faster than a wrong password.
+      await equalizeFailedLogin(password);
       throw invalid;
     }
 

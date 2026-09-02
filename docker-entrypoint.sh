@@ -6,7 +6,7 @@ set -e
 # resets anything, so it is safe to run on every start.
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   echo "Applying database migrations..."
-  ./node_modules/.bin/prisma migrate deploy
+  node /opt/prisma-cli/node_modules/prisma/build/index.js migrate deploy
 fi
 
 exec "$@"

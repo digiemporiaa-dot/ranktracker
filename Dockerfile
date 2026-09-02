@@ -34,6 +34,18 @@ ENV SESSION_SECRET="build-time-placeholder-value-not-used-at-runtime"
 
 RUN npx prisma generate && npm run build
 
+# A self-contained Prisma CLI for `migrate deploy` at container start.
+# The CLI has transitive dependencies scattered across node_modules, so
+# cherry-picking @prisma/* directories into the runtime image does not work.
+# Installing it into its own prefix keeps the dependency tree complete and
+# cannot collide with the application's own modules. The version is read from
+# package.json so the two can never drift.
+RUN mkdir -p /opt/prisma-cli \
+    && cd /opt/prisma-cli \
+    && npm init -y > /dev/null \
+    && npm install --no-audit --no-fund \
+        "prisma@$(node -p "require('/app/package.json').devDependencies.prisma")"
+
 
 # --- runtime ---------------------------------------------------------------
 FROM base AS runner
@@ -52,12 +64,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Prisma CLI, schema and migrations, so `prisma migrate deploy` can run here.
+# Schema and migrations, plus the self-contained CLI that applies them.
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+COPY --from=builder /opt/prisma-cli /opt/prisma-cli
+
+# The generated Prisma client, which the application itself uses at runtime.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh

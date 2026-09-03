@@ -5,21 +5,18 @@ import { prisma } from '@/lib/db';
 import {
   ApiError,
   assertNoRunningCheck,
+  limitDestructive,
+  limitProjectEdit,
   parseBody,
   requireProject,
   requireUser,
   route,
 } from '@/lib/api';
-import { rateLimit } from '@/lib/rate-limit';
 import { updateProjectSchema } from '@/lib/validation';
 import { getKeywordRows, summarize } from '@/lib/queries';
 import { logger } from '@/lib/logger';
 
 type Params = { params: Promise<{ id: string }> };
-
-/** Destructive project operations are rate limited per user. */
-const DESTRUCTIVE_PER_WINDOW = 20;
-const WINDOW_SECONDS = 60 * 10;
 
 export async function GET(_request: Request, { params }: Params) {
   return route('GET /api/projects/[id]', async () => {
@@ -56,6 +53,8 @@ export async function PATCH(request: Request, { params }: Params) {
     const user = await requireUser();
     const { id } = await params;
     const project = await requireProject(user.id, id);
+
+    limitProjectEdit(user.id);
 
     const input = await parseBody(request, updateProjectSchema);
 
@@ -104,14 +103,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     const { id } = await params;
     const project = await requireProject(user.id, id);
 
-    const limit = rateLimit(
-      `destructive:${user.id}`,
-      DESTRUCTIVE_PER_WINDOW,
-      WINDOW_SECONDS,
-    );
-    if (!limit.allowed) {
-      throw new ApiError(429, 'Too many changes at once. Please try again shortly.');
-    }
+    limitDestructive(user.id);
 
     await assertNoRunningCheck(project.id);
 

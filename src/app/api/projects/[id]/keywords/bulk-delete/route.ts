@@ -2,21 +2,17 @@ import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
 import {
-  ApiError,
   assertNoRunningCheck,
+  limitDestructive,
   parseBody,
   requireProject,
   requireUser,
   route,
 } from '@/lib/api';
-import { rateLimit } from '@/lib/rate-limit';
 import { bulkDeleteKeywordsSchema } from '@/lib/validation';
 import { logger } from '@/lib/logger';
 
 type Params = { params: Promise<{ id: string }> };
-
-const DESTRUCTIVE_PER_WINDOW = 20;
-const WINDOW_SECONDS = 60 * 10;
 
 /**
  * Delete several keywords at once.
@@ -32,14 +28,7 @@ export async function POST(request: Request, { params }: Params) {
     const { id } = await params;
     const project = await requireProject(user.id, id);
 
-    const limit = rateLimit(
-      `destructive:${user.id}`,
-      DESTRUCTIVE_PER_WINDOW,
-      WINDOW_SECONDS,
-    );
-    if (!limit.allowed) {
-      throw new ApiError(429, 'Too many changes at once. Please try again shortly.');
-    }
+    limitDestructive(user.id);
 
     await assertNoRunningCheck(project.id);
 

@@ -8,6 +8,8 @@ import { prisma } from '@/lib/db';
 import { getCurrentUser, type SessionUser } from '@/lib/auth';
 import { logger, newRequestId } from '@/lib/logger';
 import { DataForSeoError } from '@/lib/dataforseo';
+import { rateLimit } from '@/lib/rate-limit';
+import { idParamSchema } from '@/lib/validation';
 
 /** An error whose message is safe to show the user. */
 export class ApiError extends Error {
@@ -48,8 +50,14 @@ export async function requireUser(): Promise<SessionUser> {
  * project that does not exist.
  */
 export async function requireProject(userId: string, projectId: string) {
+  // The route param is validated here rather than in each route: an id that
+  // is not even id-shaped cannot match a row, so it is answered like any
+  // other unknown id instead of reaching the database.
+  const id = idParamSchema.safeParse(projectId);
+  if (!id.success) throw notFound('project');
+
   const project = await prisma.project.findFirst({
-    where: { id: projectId, userId },
+    where: { id: id.data, userId },
   });
   if (!project) throw notFound('project');
   return project;
@@ -79,13 +87,51 @@ export async function assertNoRunningCheck(projectId: string): Promise<void> {
 }
 
 export async function requireRankCheck(userId: string, rankCheckId: string) {
+  const id = idParamSchema.safeParse(rankCheckId);
+  if (!id.success) throw notFound('ranking check');
+
   const rankCheck = await prisma.rankCheck.findFirst({
-    where: { id: rankCheckId, project: { userId } },
+    where: { id: id.data, project: { userId } },
     include: { project: { select: { id: true, name: true, domain: true } } },
   });
   if (!rankCheck) throw notFound('ranking check');
   return rankCheck;
 }
+
+/**
+ * Rate limits for the mutating project routes.
+ *
+ * All of them are per user and per fixed window. The buckets are separate so
+ * that ordinary tidying up — deleting keywords one row at a time — cannot use
+ * up the allowance that protects the rarely-used, wholesale deletes.
+ */
+const WINDOW_SECONDS = 60 * 10;
+
+/** Whole-project or whole-list deletes. Rare by nature. */
+const DESTRUCTIVE_PER_WINDOW = 20;
+/** Editing a project's name or search settings. */
+const EDITS_PER_WINDOW = 60;
+/** Removing keywords one at a time from the table. */
+const KEYWORD_DELETES_PER_WINDOW = 120;
+
+function enforceRateLimit(key: string, limit: number): void {
+  const result = rateLimit(key, limit, WINDOW_SECONDS);
+  if (!result.allowed) {
+    throw new ApiError(429, 'Too many changes at once. Please try again shortly.');
+  }
+}
+
+/** Deleting a project, clearing its keywords, or a bulk delete. */
+export const limitDestructive = (userId: string) =>
+  enforceRateLimit(`destructive:${userId}`, DESTRUCTIVE_PER_WINDOW);
+
+/** Editing a project. */
+export const limitProjectEdit = (userId: string) =>
+  enforceRateLimit(`project-edit:${userId}`, EDITS_PER_WINDOW);
+
+/** Deleting a single keyword. */
+export const limitKeywordDelete = (userId: string) =>
+  enforceRateLimit(`keyword-delete:${userId}`, KEYWORD_DELETES_PER_WINDOW);
 
 /** Parse a JSON request body against a schema, mapping failures to a 400. */
 export async function parseBody<T extends z.ZodTypeAny>(

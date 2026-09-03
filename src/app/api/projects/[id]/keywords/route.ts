@@ -4,12 +4,17 @@ import { prisma } from '@/lib/db';
 import {
   ApiError,
   assertNoRunningCheck,
+  limitKeywordDelete,
   parseBody,
   requireProject,
   requireUser,
   route,
 } from '@/lib/api';
-import { addKeywordsSchema, listQuerySchema } from '@/lib/validation';
+import {
+  addKeywordsSchema,
+  deleteKeywordQuerySchema,
+  listQuerySchema,
+} from '@/lib/validation';
 import { parseKeywordList, MAX_KEYWORDS_PER_IMPORT } from '@/lib/csv';
 import { normalizeTargetUrl } from '@/lib/domain';
 import { applyFilters, decorate, getKeywordRows, paginate } from '@/lib/queries';
@@ -114,11 +119,16 @@ export async function DELETE(request: Request, { params }: Params) {
     const { id } = await params;
     const project = await requireProject(user.id, id);
 
+    limitKeywordDelete(user.id);
+
     await assertNoRunningCheck(project.id);
 
     const url = new URL(request.url);
-    const keywordId = url.searchParams.get('keywordId');
-    if (!keywordId) throw new ApiError(400, 'No keyword was specified.');
+    const query = deleteKeywordQuerySchema.safeParse(
+      Object.fromEntries(url.searchParams),
+    );
+    if (!query.success) throw new ApiError(400, 'No keyword was specified.');
+    const { keywordId } = query.data;
 
     // Scoped to the project, which is already scoped to the user.
     const deleted = await prisma.keyword.deleteMany({

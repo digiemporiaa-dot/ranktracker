@@ -12,6 +12,7 @@ import {
   LogOut,
   Menu,
   Settings,
+  Users,
   X,
 } from 'lucide-react';
 
@@ -26,7 +27,18 @@ const NAV = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export function Sidebar({ userName, userEmail }: { userName: string; userEmail: string }) {
+/** Shown to superadmins only — an executive sees no sign it exists. */
+const ADMIN_NAV = [{ href: '/admin/users', label: 'Users', icon: Users }];
+
+export function Sidebar({
+  userName,
+  userEmail,
+  isSuperadmin = false,
+}: {
+  userName: string;
+  userEmail: string;
+  isSuperadmin?: boolean;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -39,7 +51,7 @@ export function Sidebar({ userName, userEmail }: { userName: string; userEmail: 
 
   const nav = (
     <nav className="flex-1 space-y-1 px-3">
-      {NAV.map(({ href, label, icon: Icon }) => {
+      {[...NAV, ...(isSuperadmin ? ADMIN_NAV : [])].map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link

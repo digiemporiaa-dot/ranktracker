@@ -7,7 +7,7 @@ export const countrySchema = z.enum(COUNTRY_CODES as [string, ...string[]]);
 export const languageSchema = z.enum(LANGUAGE_CODES as [string, ...string[]]);
 export const deviceSchema = z.enum(['DESKTOP', 'MOBILE']);
 
-export const registerSchema = z.object({
+export const createUserSchema = z.object({
   name: z.string().trim().min(1, 'Please enter your name').max(100),
   email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(255),
   password: z
@@ -107,6 +107,40 @@ export const rankCheckSchema = z.object({
   keywordIds: z.array(z.string().min(1)).max(5000).optional(),
 });
 
+/**
+ * Admin edits to a user.
+ *
+ * There is deliberately no `role` field: role changes are not an HTTP
+ * operation at all, so no request body can promote or demote anyone.
+ */
+export const updateUserSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Please enter a name').max(100).optional(),
+    isActive: z.boolean().optional(),
+    password: z
+      .string()
+      .min(10, 'Password must be at least 10 characters')
+      .max(200)
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'There is nothing to update.',
+  });
+
+/**
+ * Deleting a user must say what happens to their projects.
+ *
+ * There is no default: silently destroying a client's whole ranking history
+ * because somebody left the company is not an acceptable fallback.
+ */
+export const deleteUserQuerySchema = z.discriminatedUnion('onDelete', [
+  z.object({
+    onDelete: z.literal('reassign'),
+    toUserId: z.string().min(1, 'Choose who receives the projects.'),
+  }),
+  z.object({ onDelete: z.literal('purge') }),
+]);
+
 export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
@@ -128,7 +162,7 @@ export const listQuerySchema = z.object({
   direction: z.enum(['asc', 'desc']).default('asc'),
 });
 
-export type RegisterInput = z.infer<typeof registerSchema>;
+export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

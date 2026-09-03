@@ -13,6 +13,7 @@ server. There is no custom SERP API and no provider abstraction layer.
 
 - [Architecture](#architecture)
 - [Features](#features)
+- [Roles](#roles)
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
 - [Environment variables](#environment-variables)
@@ -72,6 +73,36 @@ no `SerpService` and no provider abstraction.
 - Filtering, keyword search, and sorting on the ranking table
 - Edit a project; delete keywords singly, in bulk, or all at once, behind confirmation
 - CSV export with spreadsheet formula-injection protection
+
+---
+
+## Roles
+
+| | Executive | Superadmin |
+| --- | --- | --- |
+| Own projects, keywords, checks, export | Yes | Yes |
+| See another user's data | No | Yes |
+| Create and manage accounts | No | Yes |
+
+There is no public sign-up. The first superadmin is created with
+`npm run create-superadmin`; every account after that is provisioned from
+**/admin/users**, which only superadmins can see or reach.
+
+An executive asking for another executive's project — by URL, or by any API
+route — gets `404`, exactly as if it did not exist. Nothing in their interface
+hints that other users' data is there.
+
+**Deactivating beats deleting.** `PATCH { isActive: false }` signs the person
+out immediately, blocks any further sign-in, and leaves their projects and
+ranking history intact. Deleting requires saying what happens to their
+projects: `?onDelete=reassign&toUserId=…` moves them to another account with
+every ranking row preserved, `?onDelete=purge` deletes them and all their data.
+A bare `DELETE` is refused — losing a client's whole ranking history because
+somebody left the company is not an acceptable default.
+
+A superadmin cannot deactivate or delete their own account, and the last active
+superadmin cannot be removed. Roles are not editable over HTTP at all: no
+request body can promote or demote anyone.
 
 ---
 
@@ -487,6 +518,10 @@ user returns `404`, so existence is not disclosed.
 | -------- | ---------------------------------------- | ------------------------------------------- |
 | `POST`   | `/api/auth/login`                        | Sign in                                     |
 | `POST`   | `/api/auth/logout`                       | Sign out                                    |
+| `GET`    | `/api/admin/users`                       | List all accounts (superadmin)              |
+| `POST`   | `/api/admin/users`                       | Create an executive (superadmin)            |
+| `PATCH`  | `/api/admin/users/[id]`                  | Rename, activate/deactivate, reset password |
+| `DELETE` | `/api/admin/users/[id]`                  | Delete an account (`?onDelete=reassign&toUserId=` or `?onDelete=purge`) |
 | `GET`    | `/api/projects`                          | List your projects                          |
 | `POST`   | `/api/projects`                          | Create a project                            |
 | `GET`    | `/api/projects/[id]`                     | Project with statistics                     |
@@ -504,6 +539,9 @@ user returns `404`, so existence is not disclosed.
 | `GET`    | `/api/projects/[id]/rankings`            | Paginated ranking table                     |
 | `GET`    | `/api/projects/[id]/export`              | CSV export                                  |
 | `GET`    | `/api/health`                            | Health probe                                |
+
+Every `/api/admin/*` route is superadmin-only. An executive receives `404`
+rather than `403`, so the admin surface is not discoverable.
 
 Two rules hold across the destructive routes:
 

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import { getCurrentUser, type SessionUser } from '@/lib/auth';
+import { getCurrentUser, isSuperadmin, type SessionUser } from '@/lib/auth';
 import { projectScope, viaProjectScope, type ScopedUser } from '@/lib/scope';
 import { logger, newRequestId } from '@/lib/logger';
 import { DataForSeoError } from '@/lib/dataforseo';
@@ -38,6 +38,19 @@ export function jsonError(status: number, message: string, details?: unknown) {
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) throw unauthorized();
+  return user;
+}
+
+/**
+ * Require a signed-in superadmin.
+ *
+ * A signed-out caller gets 401, as everywhere else. An authenticated
+ * executive gets 404 rather than 403: the admin surface should not be
+ * discoverable, and a 403 would confirm the route exists.
+ */
+export async function requireSuperadmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!isSuperadmin(user)) throw notFound('page');
   return user;
 }
 

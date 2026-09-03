@@ -31,7 +31,7 @@ export default async function ProjectPage({ params }: Params) {
   const user = await requireUser();
   const { id } = await params;
 
-  const project = await requireProject(user.id, id).catch(() => null);
+  const project = await requireProject(user, id).catch(() => null);
   if (!project) notFound();
 
   const raw = await getKeywordRows(project.id);

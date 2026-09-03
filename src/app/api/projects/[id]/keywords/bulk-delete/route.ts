@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: Params) {
   return route('POST /api/projects/[id]/keywords/bulk-delete', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const limit = rateLimit(
       `destructive:${user.id}`,

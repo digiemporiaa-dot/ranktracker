@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
 import { ApiError, parseBody, requireUser, route } from '@/lib/api';
+import { projectScope } from '@/lib/scope';
 import { createProjectSchema } from '@/lib/validation';
 import { logger } from '@/lib/logger';
 
@@ -12,7 +13,7 @@ export async function GET() {
     const user = await requireUser();
 
     const projects = await prisma.project.findMany({
-      where: { userId: user.id },
+      where: projectScope(user),
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -36,11 +37,15 @@ export async function POST(request: Request) {
     const user = await requireUser();
     const input = await parseBody(request, createProjectSchema);
 
+    // Deliberately not scoped: the cap is per owner, so a superadmin is
+    // limited by their own project count, not by everyone's.
     const count = await prisma.project.count({ where: { userId: user.id } });
     if (count >= MAX_PROJECTS_PER_USER) {
       throw new ApiError(400, `You can create at most ${MAX_PROJECTS_PER_USER} projects.`);
     }
 
+    // Also deliberately not scoped: Project (userId, name) is unique per owner,
+    // so a superadmin may reuse a name an executive already has.
     const duplicate = await prisma.project.findFirst({
       where: { userId: user.id, name: input.name },
     });

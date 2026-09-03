@@ -24,7 +24,7 @@ export async function GET(request: Request, { params }: Params) {
   return route('GET /api/projects/[id]/keywords', async () => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const url = new URL(request.url);
     const query = listQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: Params) {
   return route('POST /api/projects/[id]/keywords', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const input = await parseBody(request, addKeywordsSchema);
 
@@ -112,7 +112,7 @@ export async function DELETE(request: Request, { params }: Params) {
   return route('DELETE /api/projects/[id]/keywords', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     await assertNoRunningCheck(project.id);
 

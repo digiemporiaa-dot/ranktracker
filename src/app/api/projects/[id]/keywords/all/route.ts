@@ -30,7 +30,7 @@ export async function DELETE(request: Request, { params }: Params) {
   return route('DELETE /api/projects/[id]/keywords/all', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const limit = rateLimit(
       `destructive:${user.id}`,

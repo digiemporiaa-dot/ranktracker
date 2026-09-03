@@ -3,6 +3,7 @@ import { Download, Plus, TrendingUp } from 'lucide-react';
 
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/api';
+import { projectScope } from '@/lib/scope';
 import { decorate, getKeywordRows, summarize } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { ProjectSwitcher } from '@/components/project-switcher';
@@ -22,7 +23,7 @@ export default async function RankingsPage({ searchParams }: Search) {
   const { project: requestedProjectId } = await searchParams;
 
   const projects = await prisma.project.findMany({
-    where: { userId: user.id },
+    where: projectScope(user),
     orderBy: { createdAt: 'desc' },
     select: { id: true, name: true, domain: true },
   });

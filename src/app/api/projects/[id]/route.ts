@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: Params) {
   return route('GET /api/projects/[id]', async () => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const rows = await getKeywordRows(project.id);
     const { stats, lastCheckedAt } = summarize(rows);
@@ -55,7 +55,7 @@ export async function PATCH(request: Request, { params }: Params) {
   return route('PATCH /api/projects/[id]', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const input = await parseBody(request, updateProjectSchema);
 
@@ -102,7 +102,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   return route('DELETE /api/projects/[id]', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const limit = rateLimit(
       `destructive:${user.id}`,

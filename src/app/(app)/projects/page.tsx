@@ -3,6 +3,7 @@ import { FolderKanban, Globe, Plus } from 'lucide-react';
 
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/api';
+import { projectScope } from '@/lib/scope';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,7 +18,7 @@ export default async function ProjectsPage() {
   const user = await requireUser();
 
   const projects = await prisma.project.findMany({
-    where: { userId: user.id },
+    where: projectScope(user),
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,

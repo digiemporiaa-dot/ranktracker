@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { getCurrentUser, type SessionUser } from '@/lib/auth';
+import { projectScope, viaProjectScope, type ScopedUser } from '@/lib/scope';
 import { logger, newRequestId } from '@/lib/logger';
 import { DataForSeoError } from '@/lib/dataforseo';
 
@@ -41,15 +42,19 @@ export async function requireUser(): Promise<SessionUser> {
 }
 
 /**
- * Load a project the user actually owns.
+ * Load a project this user is allowed to work on.
  *
- * Ownership is enforced in the query itself, so one user can never read or
- * write another user's project — a wrong id is indistinguishable from a
- * project that does not exist.
+ * Access is enforced in the query itself, so one executive can never read or
+ * write another's project — a project they do not own matches zero rows and is
+ * indistinguishable from one that does not exist. A superadmin is scoped to
+ * everything.
+ *
+ * This is one of only two places project access is decided; every
+ * project-scoped route reaches the database through here.
  */
-export async function requireProject(userId: string, projectId: string) {
+export async function requireProject(user: ScopedUser, projectId: string) {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, userId },
+    where: { id: projectId, ...projectScope(user) },
   });
   if (!project) throw notFound('project');
   return project;
@@ -78,9 +83,15 @@ export async function assertNoRunningCheck(projectId: string): Promise<void> {
   }
 }
 
-export async function requireRankCheck(userId: string, rankCheckId: string) {
+/**
+ * Load a ranking check this user is allowed to see.
+ *
+ * The second of the two access chokepoints: a RankCheck has no userId of its
+ * own, so it is scoped through the project it belongs to.
+ */
+export async function requireRankCheck(user: ScopedUser, rankCheckId: string) {
   const rankCheck = await prisma.rankCheck.findFirst({
-    where: { id: rankCheckId, project: { userId } },
+    where: { id: rankCheckId, ...viaProjectScope(user) },
     include: { project: { select: { id: true, name: true, domain: true } } },
   });
   if (!rankCheck) throw notFound('ranking check');

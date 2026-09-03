@@ -17,7 +17,7 @@ export async function POST(request: Request, { params }: Params) {
   return route('POST /api/projects/[id]/rank-check', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     // Fail loudly rather than returning invented ranking data.
     if (!hasDataForSeoCredentials()) {
@@ -96,7 +96,7 @@ export async function GET(_request: Request, { params }: Params) {
   return route('GET /api/projects/[id]/rank-check', async () => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const checks = await prisma.rankCheck.findMany({
       where: { projectId: project.id },

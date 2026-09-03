@@ -60,6 +60,7 @@ no `SerpService` and no provider abstraction.
 ## Features
 
 - Email/password accounts with server-side sessions in HTTP-only cookies
+- No public sign-up: accounts are provisioned by an administrator
 - Projects: name, website, country, language, device
 - Keyword entry by CSV upload (with a preview step) or by pasting a list
 - Ranking checks against DataForSEO with bounded concurrency and live progress
@@ -474,13 +475,16 @@ Redeploys are automatic on push to `main` if you enable Coolify's webhook.
 
 ## API routes
 
-All routes require an authenticated session except registration and sign-in.
+There is **no public registration**. The first account is created with
+`npm run create-superadmin`; the rest are provisioned by a superadmin. `/register`
+and `POST /api/auth/register` do not exist and return `404`.
+
+All routes require an authenticated session except sign-in.
 Every project-scoped route verifies ownership; a project belonging to another
 user returns `404`, so existence is not disclosed.
 
 | Method   | Route                                    | Purpose                                     |
 | -------- | ---------------------------------------- | ------------------------------------------- |
-| `POST`   | `/api/auth/register`                     | Create an account and start a session       |
 | `POST`   | `/api/auth/login`                        | Sign in                                     |
 | `POST`   | `/api/auth/logout`                       | Sign out                                    |
 | `GET`    | `/api/projects`                          | List your projects                          |
@@ -556,6 +560,11 @@ analysis.
 
 - DataForSEO credentials, `DATABASE_URL` and `SESSION_SECRET` are server-side
   only and live in a module marked `server-only`.
+- There is no public sign-up, and no environment flag that could switch one
+  back on — a disabled flag is one misconfigured variable away from open
+  registration on a tool holding client ranking data.
+- Deactivating an account refuses its next request, deletes its sessions, and
+  blocks sign-in.
 - Passwords are hashed with bcrypt (cost 12).
 - The session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
   The database stores an HMAC of the token keyed by `SESSION_SECRET`, so a

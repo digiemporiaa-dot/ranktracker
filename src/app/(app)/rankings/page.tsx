@@ -107,7 +107,7 @@ export default async function RankingsPage({ searchParams }: Search) {
             }
           />
         ) : (
-          <RankingsTable rows={tableRows} />
+          <RankingsTable rows={tableRows} projectId={selected.id} />
         )}
       </div>
     </>

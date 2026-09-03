@@ -55,6 +55,29 @@ export async function requireProject(userId: string, projectId: string) {
   return project;
 }
 
+/**
+ * Refuse a destructive change while a ranking check is in flight.
+ *
+ * The runner writes Ranking rows for this project from a background task; if
+ * the keywords or the project disappear underneath it, those writes fail and
+ * the run is left half-finished. PENDING counts too — such a check has been
+ * created and is about to start writing, which is how the rank-check route
+ * itself treats the two states.
+ */
+export async function assertNoRunningCheck(projectId: string): Promise<void> {
+  const running = await prisma.rankCheck.findFirst({
+    where: { projectId, status: { in: ['PENDING', 'RUNNING'] } },
+    select: { id: true },
+  });
+
+  if (running) {
+    throw new ApiError(
+      409,
+      'A ranking check is running for this project. Wait for it to finish, then try again.',
+    );
+  }
+}
+
 export async function requireRankCheck(userId: string, rankCheckId: string) {
   const rankCheck = await prisma.rankCheck.findFirst({
     where: { id: rankCheckId, project: { userId } },

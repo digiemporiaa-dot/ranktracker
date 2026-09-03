@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
-import { ApiError, parseBody, requireProject, requireUser, route } from '@/lib/api';
+import {
+  ApiError,
+  assertNoRunningCheck,
+  parseBody,
+  requireProject,
+  requireUser,
+  route,
+} from '@/lib/api';
 import { addKeywordsSchema, listQuerySchema } from '@/lib/validation';
 import { parseKeywordList, MAX_KEYWORDS_PER_IMPORT } from '@/lib/csv';
 import { normalizeTargetUrl } from '@/lib/domain';
@@ -94,11 +101,20 @@ export async function POST(request: Request, { params }: Params) {
   });
 }
 
+/**
+ * Delete one keyword.
+ *
+ * Its Ranking rows cascade, so the keyword's position history goes with it.
+ * The confirm dialog says so — it is not obvious to someone who expects this
+ * to only stop future checks.
+ */
 export async function DELETE(request: Request, { params }: Params) {
-  return route('DELETE /api/projects/[id]/keywords', async () => {
+  return route('DELETE /api/projects/[id]/keywords', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
     const project = await requireProject(user.id, id);
+
+    await assertNoRunningCheck(project.id);
 
     const url = new URL(request.url);
     const keywordId = url.searchParams.get('keywordId');
@@ -109,6 +125,13 @@ export async function DELETE(request: Request, { params }: Params) {
       where: { id: keywordId, projectId: project.id },
     });
     if (deleted.count === 0) throw new ApiError(404, 'That keyword could not be found.');
+
+    logger.info('keyword deleted', {
+      requestId,
+      userId: user.id,
+      projectId: project.id,
+      keywordId,
+    });
 
     return NextResponse.json({ ok: true });
   });

@@ -15,6 +15,11 @@ import { StatsCards } from '@/components/stats-cards';
 import { KeywordImport } from '@/components/keyword-import';
 import { RankCheckButton } from '@/components/rank-check-button';
 import { RankingsTable, type RankingRow } from '@/components/rankings-table';
+import {
+  EditProjectDialog,
+  ProjectDangerZone,
+  type EditableProject,
+} from '@/components/project-settings';
 import { COUNTRIES, type CountryCode } from '@/config/serp';
 import { formatDateTime } from '@/lib/utils';
 
@@ -54,6 +59,15 @@ export default async function ProjectPage({ params }: Params) {
 
   const hasRankings = rows.some((row) => row.checkedAt !== null);
 
+  const editable: EditableProject = {
+    id: project.id,
+    name: project.name,
+    domain: project.domain,
+    country: project.country,
+    language: project.language,
+    device: project.device,
+  };
+
   return (
     <>
       <PageHeader
@@ -74,6 +88,7 @@ export default async function ProjectPage({ params }: Params) {
         }
         actions={
           <>
+            <EditProjectDialog project={editable} />
             {hasRankings ? (
               <Button variant="outline" asChild>
                 <a href={`/api/projects/${project.id}/export`}>
@@ -119,10 +134,12 @@ export default async function ProjectPage({ params }: Params) {
             description="Run your first ranking check to see where this website ranks."
           />
         ) : (
-          <RankingsTable rows={tableRows} />
+          <RankingsTable rows={tableRows} projectId={project.id} />
         )}
 
         <KeywordImport projectId={project.id} />
+
+        <ProjectDangerZone project={editable} keywordCount={rows.length} />
       </div>
 
       <p className="mt-8 text-sm text-muted-foreground">

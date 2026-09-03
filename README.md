@@ -69,6 +69,7 @@ no `SerpService` and no provider abstraction.
 - Position change tracking, including `New` and `Lost`
 - Dashboard statistics computed from the data (Top 3 / 10 / 20, Not Ranking)
 - Filtering, keyword search, and sorting on the ranking table
+- Edit a project; delete keywords singly, in bulk, or all at once, behind confirmation
 - CSV export with spreadsheet formula-injection protection
 
 ---
@@ -458,17 +459,31 @@ user returns `404`, so existence is not disclosed.
 | `GET`    | `/api/projects`                          | List your projects                          |
 | `POST`   | `/api/projects`                          | Create a project                            |
 | `GET`    | `/api/projects/[id]`                     | Project with statistics                     |
-| `DELETE` | `/api/projects/[id]`                     | Delete a project                            |
+| `PATCH`  | `/api/projects/[id]`                     | Rename, or change country / language / device |
+| `DELETE` | `/api/projects/[id]`                     | Delete a project and all its data           |
 | `GET`    | `/api/projects/[id]/keywords`            | Paginated keywords                          |
 | `POST`   | `/api/projects/[id]/keywords`            | Add keywords from pasted text               |
 | `DELETE` | `/api/projects/[id]/keywords?keywordId=` | Remove a keyword                            |
 | `POST`   | `/api/projects/[id]/keywords/import`     | CSV preview (`commit: false`) or import     |
+| `POST`   | `/api/projects/[id]/keywords/bulk-delete` | Delete the selected keywords               |
+| `DELETE` | `/api/projects/[id]/keywords/all`        | Clear every keyword (name must be confirmed) |
 | `POST`   | `/api/projects/[id]/rank-check`          | Start a ranking check (returns `202`)       |
 | `GET`    | `/api/projects/[id]/rank-check`          | Recent ranking checks                       |
 | `GET`    | `/api/rank-check/[id]`                   | Progress for one check                      |
 | `GET`    | `/api/projects/[id]/rankings`            | Paginated ranking table                     |
 | `GET`    | `/api/projects/[id]/export`              | CSV export                                  |
 | `GET`    | `/api/health`                            | Health probe                                |
+
+Two rules hold across the destructive routes:
+
+- **The domain is not editable.** Every `Ranking` row records a position *for a
+  particular domain*, so changing it would leave one project's history
+  describing two different websites. A different domain means a new project.
+- **Nothing destructive runs mid-check.** While a ranking check is `PENDING` or
+  `RUNNING` for a project, deleting the project, a keyword, a selection, or all
+  keywords returns `409` — the background runner would otherwise be writing rows
+  against data that has just disappeared. Renaming is still allowed, since it
+  touches no ranking data.
 
 There is no `/api/serp/search`, by design.
 

@@ -67,6 +67,40 @@ export const importKeywordsSchema = z.object({
   commit: z.boolean().default(false),
 });
 
+/**
+ * Project edit.
+ *
+ * The domain is deliberately absent. Every Ranking row is a position
+ * observation *for a particular domain*; letting the domain change would make
+ * the existing history describe two different websites on one chart. A
+ * different domain means a new project.
+ */
+export const updateProjectSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Please enter a project name').max(100).optional(),
+    country: countrySchema.optional(),
+    language: languageSchema.optional(),
+    device: deviceSchema.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'There is nothing to update.',
+  });
+
+/** Upper bound on one bulk delete, mirroring the default MAX_KEYWORDS_PER_CHECK. */
+export const MAX_BULK_DELETE = 500;
+
+export const bulkDeleteKeywordsSchema = z.object({
+  keywordIds: z
+    .array(z.string().min(1).max(60))
+    .min(1, 'Select at least one keyword.')
+    .max(MAX_BULK_DELETE, `You can delete at most ${MAX_BULK_DELETE} keywords at a time.`),
+});
+
+/** Clear-all requires the project name typed back, as deliberate friction. */
+export const clearKeywordsSchema = z.object({
+  confirm: z.string().min(1, 'Please type the project name to confirm.').max(120),
+});
+
 export const rankCheckSchema = z.object({
   depth: z.number().int().min(10).max(MAX_DEPTH).optional(),
   /** Restrict the run to specific keywords; omit to check all active ones. */
@@ -97,4 +131,5 @@ export const listQuerySchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;

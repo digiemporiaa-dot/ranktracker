@@ -617,10 +617,20 @@ analysis.
 - The session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
   The database stores an HMAC of the token keyed by `SESSION_SECRET`, so a
   database dump alone cannot be replayed as a valid session.
-- Every request body is validated with Zod; all database access goes through
-  Prisma.
+- Every request body, route param and query id is validated with Zod; all
+  database access goes through Prisma.
+- A project is always loaded scoped to the signed-in user, so someone else's id
+  is answered with `404` rather than `403` — the response never confirms that
+  the project exists.
 - Ranking checks are rate limited per user, and sign-in and registration per
-  client.
+  client. The editing and deleting routes are limited per user too, in three
+  separate buckets: wholesale deletes (deleting a project, clearing its
+  keywords, bulk delete), project edits, and single-keyword deletes — so
+  tidying a keyword list one row at a time cannot use up the allowance that
+  guards the destructive routes.
+- Every destructive route refuses with `409` while a ranking check is `PENDING`
+  or `RUNNING` for that project, so the background runner is never left writing
+  rows against data that has been deleted underneath it.
 - Errors returned to the browser are generic. Provider, database and runtime
   details are logged server-side with a request id and never sent to the client.
 - Logs redact secret-looking keys and scrub known secret values, so credentials

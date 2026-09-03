@@ -4,6 +4,8 @@ import {
   MAX_BULK_DELETE,
   bulkDeleteKeywordsSchema,
   clearKeywordsSchema,
+  deleteKeywordQuerySchema,
+  idParamSchema,
   updateProjectSchema,
 } from '@/lib/validation';
 
@@ -89,5 +91,31 @@ describe('clearKeywordsSchema', () => {
     expect(clearKeywordsSchema.safeParse({ confirm: 'Wroffy India' }).success).toBe(true);
     expect(clearKeywordsSchema.safeParse({ confirm: '' }).success).toBe(false);
     expect(clearKeywordsSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('idParamSchema', () => {
+  it('accepts an id-shaped value and trims it', () => {
+    const parsed = idParamSchema.safeParse('  clx1234567890abcdef  ');
+    expect(parsed.success && parsed.data).toBe('clx1234567890abcdef');
+  });
+
+  it('rejects an empty or over-long id', () => {
+    expect(idParamSchema.safeParse('').success).toBe(false);
+    expect(idParamSchema.safeParse('   ').success).toBe(false);
+    expect(idParamSchema.safeParse('a'.repeat(61)).success).toBe(false);
+  });
+
+  it('rejects a non-string id', () => {
+    expect(idParamSchema.safeParse(null).success).toBe(false);
+    expect(idParamSchema.safeParse(42).success).toBe(false);
+  });
+});
+
+describe('deleteKeywordQuerySchema', () => {
+  it('requires a keywordId', () => {
+    expect(deleteKeywordQuerySchema.safeParse({ keywordId: 'abc' }).success).toBe(true);
+    expect(deleteKeywordQuerySchema.safeParse({}).success).toBe(false);
+    expect(deleteKeywordQuerySchema.safeParse({ keywordId: '' }).success).toBe(false);
   });
 });

@@ -403,6 +403,77 @@ describeIf('project edit and delete routes (integration)', () => {
     }
   });
 
+  // ---------- rate limiting and route params ----------
+
+  describe('rate limiting', () => {
+    it('refuses further wholesale deletes once the destructive budget is spent', async () => {
+      // Ids that match nothing: each call is a real, allowed request that
+      // spends one unit of the budget without touching any data.
+      for (let i = 0; i < 20; i += 1) {
+        const response = await bulkRoutes.POST(
+          jsonRequest({ keywordIds: ['no-such-keyword'] }),
+          params(projectId),
+        );
+        expect(response.status, `call ${i + 1}`).toBe(200);
+      }
+
+      const blocked = await bulkRoutes.POST(
+        jsonRequest({ keywordIds: ['no-such-keyword'] }),
+        params(projectId),
+      );
+      expect(blocked.status).toBe(429);
+
+      const alsoBlocked = await routes.DELETE(new Request('http://localhost'), params(projectId));
+      expect(alsoBlocked.status).toBe(429);
+      expect(await prisma.project.count({ where: { id: projectId } })).toBe(1);
+    });
+
+    it('keeps the edit and single-keyword budgets separate from that one', async () => {
+      for (let i = 0; i < 21; i += 1) {
+        await bulkRoutes.POST(
+          jsonRequest({ keywordIds: ['no-such-keyword'] }),
+          params(projectId),
+        );
+      }
+
+      // Neither of these shares the wholesale-delete bucket, so ordinary work
+      // still goes through.
+      const renamed = await routes.PATCH(
+        jsonRequest({ name: 'Renamed While Limited' }, 'PATCH'),
+        params(projectId),
+      );
+      expect(renamed.status).toBe(200);
+
+      const [first] = await keywordIds();
+      const removed = await keywordRoutes.DELETE(
+        new Request(`http://localhost/x?keywordId=${first}`, { method: 'DELETE' }),
+        params(projectId),
+      );
+      expect(removed.status).toBe(200);
+    });
+  });
+
+  describe('route and query params', () => {
+    it('answers a malformed project id as not found', async () => {
+      const malformed = ['', ' ', 'x'.repeat(200)];
+
+      for (const id of malformed) {
+        const response = await routes.PATCH(jsonRequest({ name: 'x' }, 'PATCH'), params(id));
+        expect(response.status, JSON.stringify(id)).toBe(404);
+      }
+    });
+
+    it('rejects a keyword delete with no keywordId', async () => {
+      const response = await keywordRoutes.DELETE(
+        new Request('http://localhost/x', { method: 'DELETE' }),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await prisma.keyword.count({ where: { projectId } })).toBe(3);
+    });
+  });
+
   // ---------- cross-user isolation on the new routes ----------
 
   describe('cross-user isolation', () => {

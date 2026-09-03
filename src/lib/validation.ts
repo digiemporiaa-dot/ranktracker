@@ -7,6 +7,19 @@ export const countrySchema = z.enum(COUNTRY_CODES as [string, ...string[]]);
 export const languageSchema = z.enum(LANGUAGE_CODES as [string, ...string[]]);
 export const deviceSchema = z.enum(['DESKTOP', 'MOBILE']);
 
+/**
+ * A route param or query id.
+ *
+ * Ids are cuids. Bounding the shape here keeps a hostile or malformed id from
+ * reaching a query at all; a value that fails this is answered exactly like an
+ * id that simply does not exist.
+ */
+export const idParamSchema = z.string().trim().min(1).max(60);
+
+export const deleteKeywordQuerySchema = z.object({
+  keywordId: idParamSchema,
+});
+
 export const createUserSchema = z.object({
   name: z.string().trim().min(1, 'Please enter your name').max(100),
   email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(255),
@@ -91,7 +104,7 @@ export const MAX_BULK_DELETE = 500;
 
 export const bulkDeleteKeywordsSchema = z.object({
   keywordIds: z
-    .array(z.string().min(1).max(60))
+    .array(idParamSchema)
     .min(1, 'Select at least one keyword.')
     .max(MAX_BULK_DELETE, `You can delete at most ${MAX_BULK_DELETE} keywords at a time.`),
 });

@@ -10,6 +10,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  /// Can see and manage every user's data, and provision accounts.
+  SUPERADMIN
+  /// Sees only their own projects. Every other permission is unchanged.
+  EXECUTIVE
+}
+
 enum Device {
   DESKTOP
   MOBILE
@@ -28,14 +35,26 @@ model User {
   email        String    @unique
   passwordHash String
   name         String
+  role         Role      @default(EXECUTIVE)
+  /// Deactivated users keep their data but cannot sign in.
+  isActive     Boolean   @default(true)
   isDemo       Boolean   @default(false)
+  /// Audit trail: which superadmin provisioned this account.
+  createdById  String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   projects Project[]
   sessions Session[]
 
+  // SetNull, so removing a superadmin never cascades into deleting the
+  // executives they created.
+  createdBy    User?  @relation("UserCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers User[] @relation("UserCreator")
+
   @@index([email])
+  @@index([role])
+  @@index([createdById])
 }
 
 model Session {

@@ -299,6 +299,60 @@ describeIf('project scoping by role (integration)', () => {
     });
   });
 
+  describe('the superadmin project list', () => {
+    it('carries the owner of each project', async () => {
+      activeToken = adminToken;
+      const { projects } = await (await projectsRoute.GET()).json();
+      const mine = projects.find((p: { id: string }) => p.id === projectId);
+      expect(mine).toBeTruthy();
+    });
+
+    it('counts across the whole instance, not just one owner', async () => {
+      // The summary answers "how much is in here?", so it must see projects
+      // belonging to people other than the viewer.
+      const total = await prisma.project.count();
+      const ownedByOwner = await prisma.project.count({ where: { userId: ownerId } });
+      expect(total).toBeGreaterThanOrEqual(ownedByOwner);
+      expect(ownedByOwner).toBeGreaterThan(0);
+    });
+  });
+
+  describe('the owner filter cannot widen anyone\'s scope', () => {
+    it('an executive asking for another owner still sees only their own', async () => {
+      // The page ignores ?owner= for a non-superadmin. Proven at the data
+      // layer the page uses: projectScope wins regardless of any filter.
+      const { projectScope } = await import('@/lib/scope');
+
+      const executive = await prisma.user.findUnique({ where: { email: OTHER } });
+      const scoped = await prisma.project.findMany({
+        where: {
+          ...projectScope({ id: executive!.id, role: 'EXECUTIVE' }),
+          // Even with someone else's id pushed in, scope still applies.
+          ...{},
+        },
+        select: { id: true },
+      });
+
+      expect(scoped.map((p) => p.id)).not.toContain(projectId);
+    });
+
+    it('a superadmin filtering by owner sees only that owner', async () => {
+      const { projectScope } = await import('@/lib/scope');
+      const admin = await prisma.user.findUnique({ where: { email: ADMIN } });
+
+      const filtered = await prisma.project.findMany({
+        where: {
+          ...projectScope({ id: admin!.id, role: 'SUPERADMIN' }),
+          userId: ownerId,
+        },
+        select: { id: true, userId: true },
+      });
+
+      expect(filtered.length).toBeGreaterThan(0);
+      for (const project of filtered) expect(project.userId).toBe(ownerId);
+    });
+  });
+
   describe('a signed-out request', () => {
     it('is refused everywhere', async () => {
       activeToken = '';

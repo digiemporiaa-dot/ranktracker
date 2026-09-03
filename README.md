@@ -92,6 +92,12 @@ An executive asking for another executive's project — by URL, or by any API
 route — gets `404`, exactly as if it did not exist. Nothing in their interface
 hints that other users' data is there.
 
+A superadmin's project list adds three things an executive never sees: the
+owner of each project, a filter by executive, and totals for the instance
+(projects, keywords, checks currently running). The `?owner=` filter is a
+convenience, not a permission boundary — it is ignored for anyone who is not a
+superadmin, so it can never widen a scope.
+
 **Deactivating beats deleting.** `PATCH { isActive: false }` signs the person
 out immediately, blocks any further sign-in, and leaves their projects and
 ranking history intact. Deleting requires saying what happens to their

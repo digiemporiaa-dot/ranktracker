@@ -15,7 +15,8 @@
     "seed": "tsx prisma/seed.ts",
     "dataforseo:check": "tsx --conditions=react-server scripts/dataforseo-check.ts",
     "dataforseo:locations": "tsx --conditions=react-server scripts/dataforseo-locations.ts",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "create-superadmin": "tsx --conditions=react-server scripts/create-superadmin.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

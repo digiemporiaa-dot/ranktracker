@@ -111,8 +111,13 @@ npm run seed                # optional: demo user, project and keywords
 npm run dev                 # http://localhost:3000
 ```
 
-Then register an account at `/register`, or sign in with the seeded demo
-account (see [Seed data](#seed-data)).
+Then create your administrator account and sign in at `/login`:
+
+```bash
+npm run create-superadmin -- --email you@example.com --name "Your Name"
+```
+
+Or sign in with the seeded demo account (see [Seed data](#seed-data)).
 
 ### Commands
 
@@ -125,6 +130,7 @@ account (see [Seed data](#seed-data)).
 | `npm test`                   | Unit tests                                            |
 | `npm run test:integration`   | Integration tests (needs a database, see [Testing](#testing)) |
 | `npm run seed`               | Insert demo data                                      |
+| `npm run create-superadmin`  | Create or promote an administrator account            |
 | `npm run prisma:migrate`     | Create and apply a migration in development           |
 | `npm run prisma:deploy`      | Apply committed migrations (production)               |
 | `npm run dataforseo:check`   | Check one keyword against the live API                |
@@ -438,8 +444,29 @@ curl https://rank.example.com/api/health
 `database: true` means migrations ran and the connection works.
 `serpProviderConfigured: true` means the DataForSEO credentials are present.
 
-Then open `https://rank.example.com/register`, create your account, and run one
-real keyword check to confirm the provider integration end to end.
+### 8. Create your administrator account
+
+There is no public sign-up. Open the **Terminal** for the application in Coolify
+and run:
+
+```bash
+npm run create-superadmin -- --email you@yourdomain.com --name "Your Name"
+```
+
+It asks for a password at a prompt — twice, and never echoed. Minimum 12
+characters. The password is deliberately not an argument and not an environment
+variable: arguments end up in shell history and in the process list, and an
+environment variable would leave a live administrator password sitting in the
+Coolify configuration permanently.
+
+The script refuses to run if the database already has an active superadmin,
+unless you pass `--force`. If an account with that email already exists it
+offers to promote it rather than failing.
+
+Then sign in at `https://rank.example.com/login` and run one real keyword check
+to confirm the provider integration end to end.
+
+Further accounts are created from **/admin/users** once you are signed in.
 
 Redeploys are automatic on push to `main` if you enable Coolify's webhook.
 

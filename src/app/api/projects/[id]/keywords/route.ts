@@ -9,6 +9,7 @@ import {
   requireUser,
   route,
 } from '@/lib/api';
+import { rateLimit } from '@/lib/rate-limit';
 import { addKeywordsSchema, listQuerySchema } from '@/lib/validation';
 import { parseKeywordList, MAX_KEYWORDS_PER_IMPORT } from '@/lib/csv';
 import { normalizeTargetUrl } from '@/lib/domain';
@@ -19,6 +20,10 @@ import type { Device } from '@prisma/client';
 type Params = { params: Promise<{ id: string }> };
 
 const MAX_KEYWORDS_PER_PROJECT = 5000;
+
+/** Matches the other destructive keyword routes. */
+const DESTRUCTIVE_PER_WINDOW = 20;
+const WINDOW_SECONDS = 60 * 10;
 
 export async function GET(request: Request, { params }: Params) {
   return route('GET /api/projects/[id]/keywords', async () => {
@@ -113,6 +118,15 @@ export async function DELETE(request: Request, { params }: Params) {
     const user = await requireUser();
     const { id } = await params;
     const project = await requireProject(user, id);
+
+    const limit = rateLimit(
+      `destructive:${user.id}`,
+      DESTRUCTIVE_PER_WINDOW,
+      WINDOW_SECONDS,
+    );
+    if (!limit.allowed) {
+      throw new ApiError(429, 'Too many changes at once. Please try again shortly.');
+    }
 
     await assertNoRunningCheck(project.id);
 

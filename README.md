@@ -546,6 +546,10 @@ user returns `404`, so existence is not disclosed.
 | `GET`    | `/api/projects/[id]/export`              | CSV export                                  |
 | `GET`    | `/api/health`                            | Health probe                                |
 
+Every project-scoped route — including edit, delete, bulk delete and clear-all
+— goes through the same role-aware ownership check, so a superadmin can run
+them on any project while an executive is confined to their own.
+
 Every `/api/admin/*` route is superadmin-only. An executive receives `404`
 rather than `403`, so the admin surface is not discoverable.
 

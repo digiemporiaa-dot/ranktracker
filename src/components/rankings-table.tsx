@@ -36,6 +36,7 @@ import {
   type DeviceFilter,
   type RankingFilter,
 } from '@/lib/ranking';
+import { locationLabel } from '@/components/search-summary';
 import { cn, displayUrl, formatRelativeDay } from '@/lib/utils';
 
 export type RankingRow = {
@@ -185,6 +186,15 @@ export function RankingsTable({
       };
     });
   }, [filtered, grouped]);
+
+  // What "all of them" means for the view currently shown: pivoted lines are
+  // counted against all pivoted lines, single-device rows against that
+  // device's rows. Counting lines against per-device rows would report an
+  // unfiltered two-device project as "2 of 4".
+  const totalLines = useMemo(() => {
+    const all = matchesDevice(rows, device);
+    return grouped ? groupByDevice(all).length : all.length;
+  }, [rows, device, grouped]);
 
   const totalPages = Math.max(1, Math.ceil(lines.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -380,7 +390,9 @@ export function RankingsTable({
             </Button>
           ) : null}
           <p className="text-sm text-muted-foreground">
-            {lines.length} of {rows.length} keyword{rows.length === 1 ? '' : 's'}
+            {lines.length === totalLines
+              ? `${totalLines} keyword${totalLines === 1 ? '' : 's'}`
+              : `${lines.length} of ${totalLines} keyword${totalLines === 1 ? '' : 's'}`}
           </p>
         </div>
       </div>
@@ -518,7 +530,7 @@ export function RankingsTable({
                       {showLocation ? (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
                           <MapPin className="h-3 w-3 shrink-0" aria-hidden />
-                          {line.city ?? line.country}
+                          {locationLabel(line.country, line.city)}
                         </p>
                       ) : null}
                     </TableCell>

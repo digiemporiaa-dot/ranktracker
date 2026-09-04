@@ -70,7 +70,11 @@ function toCityOptions(rows: ProviderLocation[], country: CountryCode): CityOpti
       (row) =>
         row.location_type === 'City' &&
         typeof row.location_name === 'string' &&
-        Number.isFinite(Number(row.location_code)) &&
+        // A positive integer, specifically. Number(null) is 0, which is finite
+        // but is not a location — a row like that would otherwise be offered
+        // in the picker and then searched as location 0.
+        Number.isInteger(Number(row.location_code)) &&
+        Number(row.location_code) > 0 &&
         // The per-country endpoint is already scoped, but the whole-list
         // fallback is not, so this filter has to hold either way.
         (!row.country_iso_code || row.country_iso_code.toUpperCase() === country),
@@ -156,16 +160,29 @@ export async function listCities(
   return cities;
 }
 
+/** A location that has already been resolved once and stored. */
+export type KnownLocation = {
+  country: string;
+  city: string | null;
+  locationCode: number;
+};
+
 /**
  * Resolve what the user chose into the location a rank check will use.
  *
  * A country on its own is resolved from local config and never touches the
  * network, so country-level tracking keeps working even when the provider is
  * unreachable or not configured yet. Only a city needs the provider.
+ *
+ * `known` is the location already stored on the record being updated. When the
+ * choice has not actually changed, its id is reused and the provider is not
+ * called at all — otherwise renaming a city-level project would fail whenever
+ * the provider happened to be down, for an edit that touches no location.
  */
 export async function resolveLocation(
   input: { country: CountryCode; city?: string | null },
   requestId = 'locations',
+  known?: KnownLocation,
 ): Promise<ResolvedLocation> {
   const country = getCountry(input.country);
   const city = input.city?.trim() ?? '';
@@ -177,6 +194,25 @@ export async function resolveLocation(
       locationCode: country.locationCode,
       googleDomain: country.googleDomain,
       label: country.label,
+    };
+  }
+
+  // The same country and the same city as last time: the id cannot have
+  // changed, so there is nothing to look up. The Google domain is still taken
+  // from config rather than from the stored row, so a project saved before
+  // per-country domains existed picks the right one up on its next edit.
+  if (
+    known &&
+    known.country === country.code &&
+    known.city !== null &&
+    known.city.toLowerCase() === city.toLowerCase()
+  ) {
+    return {
+      country: country.code,
+      city: known.city,
+      locationCode: known.locationCode,
+      googleDomain: country.googleDomain,
+      label: `${known.city} · ${country.label}`,
     };
   }
 

@@ -62,6 +62,7 @@ export async function resolveKeywordTarget(
                 : project.city,
         },
         requestId,
+        { country: project.country, city: project.city, locationCode: project.locationCode },
       )
     : {
         country: project.country,

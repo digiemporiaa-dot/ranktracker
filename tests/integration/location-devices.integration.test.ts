@@ -297,6 +297,46 @@ describeIf('location targeting and device tracking (integration)', () => {
       expect(data.project.city).toBe('Mumbai,Maharashtra');
     });
 
+    it('ignores a city row with no usable location id', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          expect(String(url)).toContain('/v3/serp/google/locations');
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              status_code: 20000,
+              tasks: [
+                {
+                  result: [
+                    {
+                      location_code: null,
+                      location_name: 'Broken,India',
+                      country_iso_code: 'IN',
+                      location_type: 'City',
+                    },
+                  ],
+                },
+              ],
+            }),
+          } as unknown as Response;
+        }),
+      );
+
+      // Number(null) is 0 — finite, but not a place. It must not be offered
+      // and must not end up being searched.
+      const { status } = await createProject({
+        name: 'Broken row',
+        domain: DOMAIN,
+        country: 'IN',
+        city: 'Broken',
+      });
+
+      expect(status).toBe(400);
+      expect(await prisma.project.count({ where: { userId, name: 'Broken row' } })).toBe(0);
+    });
+
     it('refuses a city the provider does not know, and creates nothing', async () => {
       const { status } = await createProject({
         name: 'Bad city',
@@ -397,6 +437,73 @@ describeIf('location targeting and device tracking (integration)', () => {
 
       const saved = await prisma.project.findUnique({ where: { id: data.project.id } });
       expect(saved).toMatchObject({ city: null, locationCode: INDIA });
+    });
+
+    it('does not ask the provider again when the location has not changed', async () => {
+      const { data } = await createProject({
+        name: 'Unchanged',
+        domain: DOMAIN,
+        country: 'IN',
+        city: 'New Delhi,Delhi',
+      });
+
+      locationCalls = [];
+
+      // Exactly what the edit dialog sends for a rename: the location fields
+      // come along untouched.
+      const response = await projectRoute.PATCH(
+        jsonRequest(
+          {
+            name: 'Unchanged Renamed',
+            country: 'IN',
+            city: 'New Delhi,Delhi',
+            language: 'en',
+            devices: ['DESKTOP'],
+          },
+          'PATCH',
+        ),
+        params(data.project.id),
+      );
+
+      expect(response.status).toBe(200);
+      expect(locationCalls).toHaveLength(0);
+
+      const saved = await prisma.project.findUnique({ where: { id: data.project.id } });
+      expect(saved).toMatchObject({
+        name: 'Unchanged Renamed',
+        city: 'New Delhi,Delhi',
+        locationCode: NEW_DELHI,
+      });
+    });
+
+    it('renames a city-level project even when the provider is unreachable', async () => {
+      const { data } = await createProject({
+        name: 'Offline rename',
+        domain: DOMAIN,
+        country: 'IN',
+        city: 'Mumbai',
+      });
+
+      // The provider goes away entirely.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('ECONNREFUSED');
+        }),
+      );
+
+      const response = await projectRoute.PATCH(
+        jsonRequest(
+          { name: 'Renamed offline', country: 'IN', city: 'Mumbai,Maharashtra' },
+          'PATCH',
+        ),
+        params(data.project.id),
+      );
+
+      // An edit that changes no location must not depend on the provider.
+      expect(response.status).toBe(200);
+      const saved = await prisma.project.findUnique({ where: { id: data.project.id } });
+      expect(saved).toMatchObject({ name: 'Renamed offline', locationCode: MUMBAI });
     });
 
     it('changing the country does not carry a city that does not exist there', async () => {
@@ -638,6 +745,33 @@ describeIf('location targeting and device tracking (integration)', () => {
       expect(mobile.rankings.map((r) => r.position)).toEqual([6, 4]);
       expect(desktop.rankings.every((r) => r.device === 'DESKTOP')).toBe(true);
       expect(mobile.rankings.every((r) => r.device === 'MOBILE')).toBe(true);
+    });
+
+    it('computes the change within a device, never across the two', async () => {
+      const projectId = await setup(['DESKTOP', 'MOBILE']);
+
+      stubProvider({
+        'autodesk reseller|desktop|2356': 9,
+        'autodesk reseller|mobile|2356': 10,
+      });
+      await runCheck(projectId);
+
+      stubProvider({
+        'autodesk reseller|desktop|2356': 4,
+        'autodesk reseller|mobile|2356': 8,
+      });
+      await runCheck(projectId);
+
+      const { decorate, getKeywordRows } = await import('@/lib/queries');
+      const rows = decorate(await getKeywordRows(projectId));
+
+      const desktop = rows.find((r) => r.device === 'DESKTOP');
+      const mobile = rows.find((r) => r.device === 'MOBILE');
+
+      // Desktop 9 -> 4 is +5 against its own previous reading, not against
+      // mobile's 10; mobile 10 -> 8 is +2 against its own.
+      expect(desktop).toMatchObject({ position: 4, previousPosition: 9, changeDelta: 5 });
+      expect(mobile).toMatchObject({ position: 8, previousPosition: 10, changeDelta: 2 });
     });
 
     it('never lets a new location overwrite an older location history', async () => {

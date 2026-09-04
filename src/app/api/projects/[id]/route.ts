@@ -79,6 +79,9 @@ export async function PATCH(request: Request, { params }: Params) {
                   : project.city,
           },
           requestId,
+          // What the project already resolved to. An edit that leaves the
+          // location alone reuses it instead of asking the provider again.
+          { country: project.country, city: project.city, locationCode: project.locationCode },
         )
       : null;
 

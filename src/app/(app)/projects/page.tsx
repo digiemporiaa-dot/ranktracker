@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { OwnerFilter } from '@/components/owner-filter';
-import { COUNTRIES, type CountryCode } from '@/config/serp';
+import { SearchSummaryBadges } from '@/components/search-summary';
 
 export const metadata = { title: 'Projects · OurRankTracker' };
 export const dynamic = 'force-dynamic';
@@ -47,7 +47,8 @@ export default async function ProjectsPage({ searchParams }: Search) {
       name: true,
       domain: true,
       country: true,
-      device: true,
+      city: true,
+      devices: true,
       isDemo: true,
       _count: { select: { keywords: true } },
       ...(admin ? { user: { select: { id: true, email: true, name: true } } } : {}),
@@ -172,12 +173,11 @@ export default async function ProjectsPage({ searchParams }: Search) {
                         {project._count.keywords} keyword
                         {project._count.keywords === 1 ? '' : 's'}
                       </Badge>
-                      <Badge variant="outline">
-                        {COUNTRIES[project.country as CountryCode]?.label ?? project.country}
-                      </Badge>
-                      <Badge variant="outline">
-                        {project.device === 'MOBILE' ? 'Mobile' : 'Desktop'}
-                      </Badge>
+                      <SearchSummaryBadges
+                        country={project.country}
+                        city={project.city}
+                        devices={project.devices}
+                      />
                     </div>
                   </CardContent>
                 </Card>

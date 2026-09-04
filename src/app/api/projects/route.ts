@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { ApiError, parseBody, requireUser, route } from '@/lib/api';
 import { projectScope } from '@/lib/scope';
 import { createProjectSchema } from '@/lib/validation';
+import { resolveLocation } from '@/lib/locations';
 import { logger } from '@/lib/logger';
 
 const MAX_PROJECTS_PER_USER = 100;
@@ -20,8 +21,11 @@ export async function GET() {
         name: true,
         domain: true,
         country: true,
+        city: true,
+        locationCode: true,
+        googleDomain: true,
         language: true,
-        device: true,
+        devices: true,
         isDemo: true,
         createdAt: true,
         _count: { select: { keywords: true } },
@@ -53,18 +57,34 @@ export async function POST(request: Request) {
       throw new ApiError(409, 'You already have a project with that name.');
     }
 
+    // The location id comes from the provider's own list, keyed on the country
+    // and city the user picked. Nothing a client sends is used as an id.
+    const location = await resolveLocation(
+      { country: input.country, city: input.city ?? null },
+      requestId,
+    );
+
     const project = await prisma.project.create({
       data: {
         userId: user.id,
         name: input.name,
         domain: input.domain,
-        country: input.country,
+        country: location.country,
+        city: location.city,
+        locationCode: location.locationCode,
+        googleDomain: location.googleDomain,
         language: input.language,
-        device: input.device,
+        devices: input.devices,
       },
     });
 
-    logger.info('project created', { requestId, userId: user.id, projectId: project.id });
+    logger.info('project created', {
+      requestId,
+      userId: user.id,
+      projectId: project.id,
+      locationCode: location.locationCode,
+      devices: input.devices,
+    });
 
     return NextResponse.json({ project }, { status: 201 });
   });

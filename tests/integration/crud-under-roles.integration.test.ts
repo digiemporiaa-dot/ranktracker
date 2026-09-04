@@ -123,7 +123,7 @@ describeIf('CRUD under roles (integration)', () => {
     for (const keyword of ['alpha', 'beta', 'gamma']) {
       const row = await prisma.keyword.create({ data: { projectId, keyword } });
       await prisma.ranking.create({
-        data: { keywordId: row.id, rankCheckId: check.id, position: 5 },
+        data: { keywordId: row.id, rankCheckId: check.id, position: 5, device: 'DESKTOP', locationCode: 2356, googleDomain: 'google.com' },
       });
     }
   });
@@ -138,7 +138,7 @@ describeIf('CRUD under roles (integration)', () => {
   describe('project edit', () => {
     it('changes the editable fields', async () => {
       const response = await projectRoutes.PATCH(
-        jsonRequest({ name: 'Renamed', country: 'US', device: 'MOBILE' }, 'PATCH'),
+        jsonRequest({ name: 'Renamed', country: 'US', devices: ['MOBILE'] }, 'PATCH'),
         params(projectId),
       );
 
@@ -146,7 +146,7 @@ describeIf('CRUD under roles (integration)', () => {
       expect(await prisma.project.findUnique({ where: { id: projectId } })).toMatchObject({
         name: 'Renamed',
         country: 'US',
-        device: 'MOBILE',
+        devices: ['MOBILE'],
       });
     });
 
@@ -167,7 +167,7 @@ describeIf('CRUD under roles (integration)', () => {
     });
 
     it('rejects an unknown country, language or device', async () => {
-      for (const body of [{ country: 'ZZ' }, { language: 'fr' }, { device: 'TABLET' }]) {
+      for (const body of [{ country: 'ZZ' }, { language: 'fr' }, { devices: ['TABLET'] }]) {
         expect(
           (await projectRoutes.PATCH(jsonRequest(body, 'PATCH'), params(projectId))).status,
         ).toBe(400);

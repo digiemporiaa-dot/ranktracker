@@ -9,6 +9,8 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
+import { COUNTRIES } from '../src/config/serp';
+
 const prisma = new PrismaClient();
 
 const DEMO_EMAIL = 'demo@ourranktracker.local';
@@ -54,8 +56,11 @@ async function main() {
       name: 'Demo Project — Wroffy India',
       domain: 'wroffy.com',
       country: 'IN',
+      city: null,
+      locationCode: COUNTRIES.IN.locationCode,
+      googleDomain: COUNTRIES.IN.googleDomain,
       language: 'en',
-      device: 'DESKTOP',
+      devices: ['DESKTOP'],
       isDemo: true,
     },
   });
@@ -91,6 +96,9 @@ async function main() {
         keyword: entry.keyword,
         targetUrl: entry.targetUrl,
         country: 'IN',
+        city: null,
+        locationCode: COUNTRIES.IN.locationCode,
+        googleDomain: COUNTRIES.IN.googleDomain,
         language: 'en',
         device: 'DESKTOP',
       },
@@ -107,6 +115,9 @@ async function main() {
               ? null
               : `https://wroffy.com${entry.targetUrl ?? `/${entry.keyword.replace(/\s+/g, '-')}`}`,
           resultsChecked: 100,
+          device: 'DESKTOP',
+          locationCode: COUNTRIES.IN.locationCode,
+          googleDomain: COUNTRIES.IN.googleDomain,
           checkedAt: checkDates[index],
           createdAt: checkDates[index],
         },

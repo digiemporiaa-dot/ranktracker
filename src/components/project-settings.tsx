@@ -8,7 +8,6 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
@@ -19,21 +18,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  COUNTRIES,
-  COUNTRY_CODES,
-  DEVICES,
-  LANGUAGES,
-  LANGUAGE_CODES,
-} from '@/config/serp';
+import { SearchSettings, type SearchSettingsValue } from '@/components/search-settings';
 
 export type EditableProject = {
   id: string;
   name: string;
   domain: string;
   country: string;
+  city: string | null;
   language: string;
-  device: string;
+  devices: string[];
 };
 
 /** Edit dialog, opened from the project page header. */
@@ -45,28 +39,33 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const [form, setForm] = useState({
+  const initial = () => ({
     name: project.name,
-    country: project.country,
-    language: project.language,
-    device: project.device,
+    search: {
+      country: project.country,
+      city: project.city ?? '',
+      language: project.language,
+      devices: [...project.devices],
+    } satisfies SearchSettingsValue,
   });
+
+  const [form, setForm] = useState(initial);
+
+  const sameDevices =
+    form.search.devices.length === project.devices.length &&
+    form.search.devices.every((device) => project.devices.includes(device));
 
   const changed =
     form.name.trim() !== project.name ||
-    form.country !== project.country ||
-    form.language !== project.language ||
-    form.device !== project.device;
+    form.search.country !== project.country ||
+    form.search.city.trim() !== (project.city ?? '') ||
+    form.search.language !== project.language ||
+    !sameDevices;
 
   function reset(nextOpen: boolean) {
     setOpen(nextOpen);
     if (!nextOpen) {
-      setForm({
-        name: project.name,
-        country: project.country,
-        language: project.language,
-        device: project.device,
-      });
+      setForm(initial());
       setError(null);
     }
   }
@@ -74,6 +73,12 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (form.search.devices.length === 0) {
+      setError('Select at least one device to track.');
+      return;
+    }
+
     setPending(true);
 
     try {
@@ -82,9 +87,10 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name.trim(),
-          country: form.country,
-          language: form.language,
-          device: form.device,
+          country: form.search.country,
+          city: form.search.city.trim() || null,
+          language: form.search.language,
+          devices: form.search.devices,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -146,57 +152,17 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-country">Country</Label>
-              <Select
-                id="edit-country"
-                value={form.country}
-                onChange={(event) => setForm({ ...form, country: event.target.value })}
-              >
-                {COUNTRY_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {COUNTRIES[code].label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-language">Language</Label>
-              <Select
-                id="edit-language"
-                value={form.language}
-                onChange={(event) => setForm({ ...form, language: event.target.value })}
-              >
-                {LANGUAGE_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {LANGUAGES[code].label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-device">Device</Label>
-              <Select
-                id="edit-device"
-                value={form.device}
-                onChange={(event) => setForm({ ...form, device: event.target.value })}
-              >
-                {DEVICES.map((device) => (
-                  <option key={device.code} value={device.code}>
-                    {device.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
+          <SearchSettings
+            idPrefix="edit"
+            value={form.search}
+            onChange={(search) => setForm({ ...form, search })}
+            disabled={pending}
+          />
 
           <p className="text-xs text-muted-foreground">
-            Country, language and device apply to keywords you add from now on. Keywords already
-            in this project keep the settings they were added with, and will keep being checked
-            that way.
+            The location, language and devices apply to keywords you add from now on. Keywords
+            already in this project keep the settings they were added with and keep being
+            checked that way, so their history stays comparable.
           </p>
 
           <DialogFooter>

@@ -1,11 +1,46 @@
 import { z } from 'zod';
 
-import { COUNTRY_CODES, LANGUAGE_CODES, MAX_DEPTH } from '@/config/serp';
+import {
+  COUNTRY_CODES,
+  LANGUAGE_CODES,
+  MAX_DEPTH,
+  type CountryCode,
+  type LanguageCode,
+} from '@/config/serp';
 import { normalizeDomain } from '@/lib/domain';
 
-export const countrySchema = z.enum(COUNTRY_CODES as [string, ...string[]]);
-export const languageSchema = z.enum(LANGUAGE_CODES as [string, ...string[]]);
+// Typed as tuples so the parsed value keeps its literal type: a validated
+// country is a CountryCode, not any string, and the routes that pass it on to
+// the location resolver do not need a cast.
+export const countrySchema = z.enum(COUNTRY_CODES as [CountryCode, ...CountryCode[]]);
+export const languageSchema = z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]);
 export const deviceSchema = z.enum(['DESKTOP', 'MOBILE']);
+
+/**
+ * A city, by name.
+ *
+ * Optional everywhere: an absent or empty city means the whole country is
+ * searched. The name is turned into a DataForSEO location id on the server —
+ * there is deliberately no field for a caller to send an id of its own.
+ */
+export const citySchema = z
+  .string()
+  .trim()
+  .max(120, 'That city name is too long.')
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable();
+
+/**
+ * The devices to track. At least one, and each one only once.
+ *
+ * Every selected device is checked with its own SERP request and kept as its
+ * own ranking history, so this is a list rather than a single value.
+ */
+export const devicesSchema = z
+  .array(deviceSchema)
+  .min(1, 'Select at least one device.')
+  .max(2)
+  .transform((devices) => [...new Set(devices)]);
 
 /**
  * A route param or query id.
@@ -51,9 +86,12 @@ export const createProjectSchema = z.object({
       }
       return normalized;
     }),
-  country: countrySchema.default('IN'),
+  // Required: a rank check has to happen somewhere, and there is no sensible
+  // country to assume on someone else's behalf.
+  country: countrySchema,
+  city: citySchema.optional(),
   language: languageSchema.default('en'),
-  device: deviceSchema.default('DESKTOP'),
+  devices: devicesSchema.default(['DESKTOP']),
 });
 
 const keywordEntrySchema = z.object({
@@ -67,15 +105,17 @@ export const addKeywordsSchema = z.object({
   /** Pre-parsed rows, used by the CSV import preview. */
   keywords: z.array(keywordEntrySchema).max(5000).optional(),
   country: countrySchema.optional(),
+  city: citySchema.optional(),
   language: languageSchema.optional(),
-  device: deviceSchema.optional(),
+  devices: devicesSchema.optional(),
 });
 
 export const importKeywordsSchema = z.object({
   csv: z.string().min(1, 'The file is empty').max(4_000_000),
   country: countrySchema.optional(),
+  city: citySchema.optional(),
   language: languageSchema.optional(),
-  device: deviceSchema.optional(),
+  devices: devicesSchema.optional(),
   /** When false, the server parses and returns a preview without saving. */
   commit: z.boolean().default(false),
 });
@@ -92,8 +132,10 @@ export const updateProjectSchema = z
   .object({
     name: z.string().trim().min(1, 'Please enter a project name').max(100).optional(),
     country: countrySchema.optional(),
+    /** Explicit null clears the city and goes back to country-level tracking. */
+    city: citySchema.optional(),
     language: languageSchema.optional(),
-    device: deviceSchema.optional(),
+    devices: devicesSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'There is nothing to update.',
@@ -173,6 +215,14 @@ export const listQuerySchema = z.object({
     .default('all'),
   sort: z.enum(['keyword', 'position', 'change', 'checkedAt']).default('position'),
   direction: z.enum(['asc', 'desc']).default('asc'),
+  /** Show one device's rankings, or both side by side. */
+  device: z.enum(['all', 'DESKTOP', 'MOBILE']).default('all'),
+});
+
+/** Query for the city picker. The country decides which cities are offered. */
+export const cityQuerySchema = z.object({
+  country: countrySchema,
+  search: z.string().trim().max(120).optional(),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
@@ -180,3 +230,4 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
+export type CityQuery = z.infer<typeof cityQuerySchema>;

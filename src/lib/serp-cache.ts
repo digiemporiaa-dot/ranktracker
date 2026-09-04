@@ -14,15 +14,23 @@ import { fetchSerp, type OrganicResult, type RankingLookup } from '@/lib/datafor
  * and `fetchSerp` is called directly on a miss.
  */
 
+/**
+ * The identity of a SERP response.
+ *
+ * The location code and the Google domain are part of the key, so a
+ * country-level result is never served to a city-level check, and a desktop
+ * response is never handed to a mobile one.
+ */
 export function buildCacheKey(lookup: RankingLookup): string {
   const parts = [
     lookup.keyword.trim().toLowerCase(),
-    lookup.country,
+    String(lookup.locationCode),
+    lookup.googleDomain,
     lookup.language,
     lookup.device,
     String(lookup.results),
   ].join('|');
-  return createHash('sha256').update(parts).digest('hex');
+  return `serp:${createHash('sha256').update(parts).digest('hex')}`;
 }
 
 export async function fetchSerpCached(

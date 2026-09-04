@@ -130,7 +130,7 @@ describeIf('project edit and delete routes (integration)', () => {
     for (const keyword of ['alpha', 'beta', 'gamma']) {
       const row = await prisma.keyword.create({ data: { projectId, keyword } });
       await prisma.ranking.create({
-        data: { keywordId: row.id, rankCheckId: check.id, position: 5 },
+        data: { keywordId: row.id, rankCheckId: check.id, position: 5, device: 'DESKTOP', locationCode: 2356, googleDomain: 'google.com' },
       });
     }
   });
@@ -145,7 +145,7 @@ describeIf('project edit and delete routes (integration)', () => {
   describe('PATCH /api/projects/[id]', () => {
     it('updates the editable fields', async () => {
       const response = await routes.PATCH(
-        jsonRequest({ name: 'Wroffy Global', country: 'US', device: 'MOBILE' }, 'PATCH'),
+        jsonRequest({ name: 'Wroffy Global', country: 'US', devices: ['MOBILE'] }, 'PATCH'),
         params(projectId),
       );
 
@@ -154,7 +154,7 @@ describeIf('project edit and delete routes (integration)', () => {
       expect(saved).toMatchObject({
         name: 'Wroffy Global',
         country: 'US',
-        device: 'MOBILE',
+        devices: ['MOBILE'],
       });
     });
 
@@ -177,7 +177,7 @@ describeIf('project edit and delete routes (integration)', () => {
     });
 
     it('rejects an unknown country, language or device', async () => {
-      for (const body of [{ country: 'ZZ' }, { language: 'fr' }, { device: 'TABLET' }]) {
+      for (const body of [{ country: 'ZZ' }, { language: 'fr' }, { devices: ['TABLET'] }]) {
         const response = await routes.PATCH(jsonRequest(body, 'PATCH'), params(projectId));
         expect(response.status, JSON.stringify(body)).toBe(400);
       }

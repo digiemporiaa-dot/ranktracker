@@ -17,9 +17,9 @@ import {
 } from '@/lib/validation';
 import { parseKeywordList, MAX_KEYWORDS_PER_IMPORT } from '@/lib/csv';
 import { normalizeTargetUrl } from '@/lib/domain';
+import { buildKeywordRows, resolveKeywordTarget } from '@/lib/keywords';
 import { applyFilters, decorate, getKeywordRows, paginate } from '@/lib/queries';
 import { logger } from '@/lib/logger';
-import type { Device } from '@prisma/client';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -61,45 +61,39 @@ export async function POST(request: Request, { params }: Params) {
       throw new ApiError(400, 'Please add at least one keyword.');
     }
 
+    const target = await resolveKeywordTarget(project, input, requestId);
+    const rows = buildKeywordRows(project.id, entries, target);
+
+    // The cap counts rows, not keyword texts: tracking one keyword on two
+    // devices is two SERP calls on every check, so it costs two.
     const existingCount = await prisma.keyword.count({ where: { projectId: project.id } });
-    if (existingCount + entries.length > MAX_KEYWORDS_PER_PROJECT) {
+    if (existingCount + rows.length > MAX_KEYWORDS_PER_PROJECT) {
       throw new ApiError(
         400,
-        `A project can hold at most ${MAX_KEYWORDS_PER_PROJECT} keywords. This project has ${existingCount}.`,
+        `A project can hold at most ${MAX_KEYWORDS_PER_PROJECT} keywords. This project has ${existingCount}, and ${entries.length} keyword${entries.length === 1 ? '' : 's'} on ${target.devices.length} device${target.devices.length === 1 ? '' : 's'} would add ${rows.length}.`,
       );
     }
 
-    const country = input.country ?? project.country;
-    const language = input.language ?? project.language;
-    const device = (input.device ?? project.device) as Device;
-
     // Existing keywords are skipped rather than duplicated, so re-importing
     // a list is safe and keeps ranking history attached to the same rows.
-    const result = await prisma.keyword.createMany({
-      data: entries.map((entry) => ({
-        projectId: project.id,
-        keyword: entry.keyword,
-        targetUrl: entry.targetUrl,
-        country,
-        language,
-        device,
-      })),
-      skipDuplicates: true,
-    });
+    const result = await prisma.keyword.createMany({ data: rows, skipDuplicates: true });
 
     logger.info('keywords added', {
       requestId,
       userId: user.id,
       projectId: project.id,
       submitted: entries.length,
+      devices: target.devices,
+      locationCode: target.locationCode,
       created: result.count,
     });
 
     return NextResponse.json(
       {
         created: result.count,
-        skipped: entries.length - result.count,
+        skipped: rows.length - result.count,
         total: existingCount + result.count,
+        devices: target.devices,
       },
       { status: 201 },
     );

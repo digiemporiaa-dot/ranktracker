@@ -21,7 +21,15 @@ import type { CountryCode, LanguageCode } from '@/config/serp';
 
 type RunnableKeyword = Pick<
   Keyword,
-  'id' | 'keyword' | 'targetUrl' | 'country' | 'language' | 'device'
+  | 'id'
+  | 'keyword'
+  | 'targetUrl'
+  | 'country'
+  | 'city'
+  | 'locationCode'
+  | 'googleDomain'
+  | 'language'
+  | 'device'
 >;
 
 export async function startRankCheck(opts: {
@@ -97,10 +105,16 @@ async function runRankCheck(opts: {
 
       const keywordStartedAt = Date.now();
       try {
+        // Every field comes from the keyword row, which is where its location
+        // and device were fixed when it was created. Two keywords that differ
+        // only by device produce two separate provider calls.
         const lookup = {
           keyword: keyword.keyword,
           domain: project.domain,
           country: keyword.country as CountryCode,
+          city: keyword.city,
+          locationCode: keyword.locationCode,
+          googleDomain: keyword.googleDomain,
           language: keyword.language as LanguageCode,
           device: keyword.device as Device,
           results: depth,
@@ -109,6 +123,9 @@ async function runRankCheck(opts: {
         const { organic, cached } = await fetchSerpCached(lookup, requestId);
         const result = await checkKeywordRanking(lookup, organic, requestId);
 
+        // The configuration is written onto the ranking as well as being
+        // implied by the keyword, so a stored position can always be read back
+        // with the device and location it was actually measured on.
         await prisma.ranking.create({
           data: {
             keywordId: keyword.id,
@@ -116,6 +133,9 @@ async function runRankCheck(opts: {
             position: result.position,
             rankingUrl: result.rankingUrl,
             resultsChecked: result.resultsChecked,
+            device: keyword.device,
+            locationCode: keyword.locationCode,
+            googleDomain: keyword.googleDomain,
             checkedAt: new Date(),
           },
         });
@@ -128,6 +148,8 @@ async function runRankCheck(opts: {
           keywordId: keyword.id,
           status: 'ok',
           position: result.position,
+          device: keyword.device,
+          locationCode: keyword.locationCode,
           cached,
           durationMs: Date.now() - keywordStartedAt,
         });

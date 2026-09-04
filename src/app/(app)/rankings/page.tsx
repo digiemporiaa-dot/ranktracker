@@ -4,7 +4,7 @@ import { Download, Plus, TrendingUp } from 'lucide-react';
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/api';
 import { projectScope } from '@/lib/scope';
-import { decorate, getKeywordRows, summarize } from '@/lib/queries';
+import { decorate, getKeywordRows, summarize, toTableRows } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { ProjectSwitcher } from '@/components/project-switcher';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -58,18 +58,7 @@ export default async function RankingsPage({ searchParams }: Search) {
   const { stats, lastCheckedAt } = summarize(raw);
   const hasRankings = rows.some((row) => row.checkedAt !== null);
 
-  const tableRows: RankingRow[] = rows.map((row) => ({
-    id: row.id,
-    keyword: row.keyword,
-    targetUrl: row.targetUrl,
-    position: row.position,
-    rankingUrl: row.rankingUrl,
-    checkedAt: row.checkedAt ? row.checkedAt.toISOString() : null,
-    previousPosition: row.previousPosition,
-    changeKind: row.changeKind,
-    changeDelta: row.changeDelta,
-    changeLabel: row.changeLabel,
-  }));
+  const tableRows: RankingRow[] = toTableRows(rows);
 
   return (
     <>

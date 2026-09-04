@@ -4,7 +4,7 @@ import { Download, Globe, ListChecks, TrendingUp } from 'lucide-react';
 
 import { prisma } from '@/lib/db';
 import { requireProject, requireUser } from '@/lib/api';
-import { decorate, getKeywordRows, summarize } from '@/lib/queries';
+import { decorate, getKeywordRows, summarize, toTableRows } from '@/lib/queries';
 import { env, hasDataForSeoCredentials } from '@/lib/env';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ import {
   ProjectDangerZone,
   type EditableProject,
 } from '@/components/project-settings';
-import { COUNTRIES, type CountryCode } from '@/config/serp';
+import { SearchSummaryBadges } from '@/components/search-summary';
 import { formatDateTime } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -44,18 +44,7 @@ export default async function ProjectPage({ params }: Params) {
     select: { id: true },
   });
 
-  const tableRows: RankingRow[] = rows.map((row) => ({
-    id: row.id,
-    keyword: row.keyword,
-    targetUrl: row.targetUrl,
-    position: row.position,
-    rankingUrl: row.rankingUrl,
-    checkedAt: row.checkedAt ? row.checkedAt.toISOString() : null,
-    previousPosition: row.previousPosition,
-    changeKind: row.changeKind,
-    changeDelta: row.changeDelta,
-    changeLabel: row.changeLabel,
-  }));
+  const tableRows: RankingRow[] = toTableRows(rows);
 
   const hasRankings = rows.some((row) => row.checkedAt !== null);
 
@@ -64,8 +53,9 @@ export default async function ProjectPage({ params }: Params) {
     name: project.name,
     domain: project.domain,
     country: project.country,
+    city: project.city,
     language: project.language,
-    device: project.device,
+    devices: project.devices,
   };
 
   return (
@@ -79,10 +69,12 @@ export default async function ProjectPage({ params }: Params) {
               {project.domain}
             </span>
             <span>Last checked: {formatDateTime(lastCheckedAt)}</span>
-            <Badge variant="outline">
-              {COUNTRIES[project.country as CountryCode]?.label ?? project.country}
-            </Badge>
-            <Badge variant="outline">{project.device === 'MOBILE' ? 'Mobile' : 'Desktop'}</Badge>
+            <SearchSummaryBadges
+              country={project.country}
+              city={project.city}
+              devices={project.devices}
+              googleDomain={project.googleDomain}
+            />
             {project.isDemo ? <Badge variant="secondary">Demo data</Badge> : null}
           </span>
         }
@@ -101,8 +93,10 @@ export default async function ProjectPage({ params }: Params) {
               projectId={project.id}
               keywordCount={rows.length}
               country={project.country}
+              city={project.city}
+              googleDomain={project.googleDomain}
               language={project.language}
-              device={project.device}
+              devices={project.devices}
               depth={env.SERP_RESULTS}
               activeCheckId={activeCheck?.id ?? null}
             />

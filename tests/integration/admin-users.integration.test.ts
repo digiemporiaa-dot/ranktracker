@@ -442,7 +442,7 @@ describeIf('admin user management (integration)', () => {
         data: { projectId: project.id, status: 'COMPLETED', totalKeywords: 1 },
       });
       await prisma.ranking.create({
-        data: { keywordId: keyword.id, rankCheckId: check.id, position: 7 },
+        data: { keywordId: keyword.id, rankCheckId: check.id, position: 7, device: 'DESKTOP', locationCode: 2356, googleDomain: 'google.com' },
       });
     });
 

@@ -8,29 +8,42 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import {
-  COUNTRIES,
-  COUNTRY_CODES,
-  DEFAULT_COUNTRY,
-  DEFAULT_DEVICE,
-  DEFAULT_LANGUAGE,
-  DEVICES,
-  LANGUAGES,
-  LANGUAGE_CODES,
-} from '@/config/serp';
+import { SearchSettings, type SearchSettingsValue } from '@/components/search-settings';
+import { DEFAULT_COUNTRY, DEFAULT_DEVICES, DEFAULT_LANGUAGE } from '@/config/serp';
 
 export function ProjectForm({ onCancel }: { onCancel?: () => void }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const [search, setSearch] = useState<SearchSettingsValue>({
+    country: DEFAULT_COUNTRY,
+    city: '',
+    language: DEFAULT_LANGUAGE,
+    devices: [...DEFAULT_DEVICES],
+  });
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (search.devices.length === 0) {
+      setError('Select at least one device to track.');
+      return;
+    }
+
     setPending(true);
 
-    const payload = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
+    const form = new FormData(event.currentTarget);
+    const payload = {
+      name: String(form.get('name') ?? ''),
+      domain: String(form.get('domain') ?? ''),
+      country: search.country,
+      // An empty box means the whole country, which the server reads as null.
+      city: search.city.trim() || null,
+      language: search.language,
+      devices: search.devices,
+    };
 
     try {
       const response = await fetch('/api/projects', {
@@ -71,40 +84,12 @@ export function ProjectForm({ onCancel }: { onCancel?: () => void }) {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="country">Country</Label>
-          <Select id="country" name="country" defaultValue={DEFAULT_COUNTRY}>
-            {COUNTRY_CODES.map((code) => (
-              <option key={code} value={code}>
-                {COUNTRIES[code].label}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="language">Language</Label>
-          <Select id="language" name="language" defaultValue={DEFAULT_LANGUAGE}>
-            {LANGUAGE_CODES.map((code) => (
-              <option key={code} value={code}>
-                {LANGUAGES[code].label}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="device">Device</Label>
-          <Select id="device" name="device" defaultValue={DEFAULT_DEVICE}>
-            {DEVICES.map((device) => (
-              <option key={device.code} value={device.code}>
-                {device.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
+      <SearchSettings
+        idPrefix="new"
+        value={search}
+        onChange={setSearch}
+        disabled={pending}
+      />
 
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>

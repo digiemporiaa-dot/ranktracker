@@ -44,10 +44,12 @@ describe('updateProjectSchema', () => {
   });
 
   it('rejects a device outside the configured list', () => {
-    expect(updateProjectSchema.safeParse({ device: 'DESKTOP' }).success).toBe(true);
-    expect(updateProjectSchema.safeParse({ device: 'MOBILE' }).success).toBe(true);
-    expect(updateProjectSchema.safeParse({ device: 'TABLET' }).success).toBe(false);
-    expect(updateProjectSchema.safeParse({ device: 'desktop' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ devices: ['DESKTOP'] }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ devices: ['MOBILE'] }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ devices: ['DESKTOP', 'MOBILE'] }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ devices: ['TABLET'] }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ devices: ['desktop'] }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ devices: [] }).success).toBe(false);
   });
 
   it('does not accept a domain change', () => {

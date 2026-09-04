@@ -32,24 +32,36 @@ async function main() {
     process.exit(1);
   }
 
+  const country = arg('country', 'IN') as CountryCode;
+
+  if (!COUNTRIES[country]) {
+    console.error(`Unsupported country "${country}". Supported: ${Object.keys(COUNTRIES).join(', ')}`);
+    process.exit(1);
+  }
+
+  // The app resolves a city name to a location code from DataForSEO's own
+  // list. This script has no picker, so --location takes the code directly —
+  // handy for checking a city before wiring it into a project.
+  const locationCode = Number(arg('location', String(COUNTRIES[country].locationCode)));
+
   const lookup = {
     keyword: arg('keyword'),
     domain: arg('domain'),
-    country: arg('country', 'IN') as CountryCode,
+    country,
+    city: null,
+    locationCode,
+    googleDomain: arg('google-domain', COUNTRIES[country].googleDomain),
     language: arg('language', 'en') as LanguageCode,
     device: arg('device', 'DESKTOP').toUpperCase() as DeviceCode,
     results: Number(arg('results', '100')),
   };
 
-  if (!COUNTRIES[lookup.country]) {
-    console.error(`Unsupported country "${lookup.country}". Supported: ${Object.keys(COUNTRIES).join(', ')}`);
-    process.exit(1);
-  }
-
   console.log('Requesting SERP from DataForSEO');
   console.log(`  keyword:  ${lookup.keyword}`);
   console.log(`  domain:   ${lookup.domain}`);
-  console.log(`  country:  ${COUNTRIES[lookup.country].label} (location_code ${COUNTRIES[lookup.country].locationCode})`);
+  console.log(`  country:  ${COUNTRIES[lookup.country].label}`);
+  console.log(`  location: location_code ${lookup.locationCode}`);
+  console.log(`  google:   ${lookup.googleDomain}`);
   console.log(`  language: ${lookup.language}`);
   console.log(`  device:   ${lookup.device}`);
   console.log(`  results:  ${lookup.results}`);

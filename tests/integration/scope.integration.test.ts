@@ -146,7 +146,13 @@ describeIf('project scoping by role (integration)', () => {
     rankCheckId = check.id;
 
     await prisma.ranking.create({
-      data: { keywordId, rankCheckId, position: 4, rankingUrl: 'https://owned.com/a' },
+      data: {
+        keywordId,
+        rankCheckId,
+        position: 4,
+        rankingUrl: 'https://owned.com/a',
+        device: 'DESKTOP', locationCode: 2356, googleDomain: 'google.com',
+      },
     });
   });
 
@@ -284,7 +290,8 @@ describeIf('project scoping by role (integration)', () => {
     it('still creates projects under their own account', async () => {
       activeToken = adminToken;
       const response = await projectsRoute.POST(
-        jsonRequest({ name: 'Admin Own Project', domain: 'admin-own.com' }),
+        // country is required now: a check has to happen somewhere.
+        jsonRequest({ name: 'Admin Own Project', domain: 'admin-own.com', country: 'IN' }),
       );
 
       expect(response.status).toBe(201);

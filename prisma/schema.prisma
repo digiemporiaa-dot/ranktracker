@@ -31,18 +31,18 @@ enum RankCheckStatus {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String
   name         String
-  role         Role      @default(EXECUTIVE)
+  role         Role     @default(EXECUTIVE)
   /// Deactivated users keep their data but cannot sign in.
-  isActive     Boolean   @default(true)
-  isDemo       Boolean   @default(false)
+  isActive     Boolean  @default(true)
+  isDemo       Boolean  @default(false)
   /// Audit trail: which superadmin provisioned this account.
   createdById  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   projects Project[]
   sessions Session[]
@@ -71,17 +71,25 @@ model Session {
 }
 
 model Project {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
   /// Normalized registrable host, e.g. "wroffy.com"
-  domain    String
-  country   String   @default("IN")
-  language  String   @default("en")
-  device    Device   @default(DESKTOP)
-  isDemo    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  domain       String
+  /// Search settings applied to keywords added from now on.
+  country      String   @default("IN")
+  /// Optional. Null means the whole country is searched.
+  city         String?
+  /// DataForSEO location id resolved from country + city. Never user-entered.
+  locationCode Int      @default(2356)
+  /// Google property searched, e.g. "google.co.in". Derived from the country.
+  googleDomain String   @default("google.com")
+  language     String   @default("en")
+  /// One or both devices. Each device is checked with its own SERP request.
+  devices      Device[] @default([DESKTOP])
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   keywords   Keyword[]
@@ -93,37 +101,55 @@ model Project {
 }
 
 model Keyword {
-  id        String   @id @default(cuid())
-  projectId String
-  keyword   String
-  targetUrl String?
-  country   String   @default("IN")
-  language  String   @default("en")
-  device    Device   @default(DESKTOP)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  projectId    String
+  keyword      String
+  targetUrl    String?
+  country      String   @default("IN")
+  /// Optional. Null means this keyword is checked at country level.
+  city         String?
+  /// The location actually sent to DataForSEO. Resolved server-side.
+  locationCode Int      @default(2356)
+  /// The Google property actually searched for this keyword.
+  googleDomain String   @default("google.com")
+  language     String   @default("en")
+  device       Device   @default(DESKTOP)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   rankings Ranking[]
 
-  // A keyword is unique per project + locale + device combination.
-  @@unique([projectId, keyword, country, language, device])
+  // A keyword is unique per project + location + language + device.
+  //
+  // The location is identified by locationCode rather than by (country, city):
+  // one code names exactly one place, and unlike a nullable city column it
+  // cannot be NULL — which in Postgres would make every country-level row
+  // distinct from every other and defeat the constraint entirely.
+  @@unique([projectId, keyword, locationCode, language, device])
   @@index([projectId])
   @@index([projectId, active])
+  @@index([projectId, locationCode, device])
 }
 
 model Ranking {
-  id         String   @id @default(cuid())
-  keywordId  String
+  id             String   @id @default(cuid())
+  keywordId      String
   /// 1..depth, or null when the domain was not found in the checked results.
-  position   Int?
-  rankingUrl String?
+  position       Int?
+  rankingUrl     String?
   /// Total organic results inspected for this check.
   resultsChecked Int?
-  rankCheckId String?
-  checkedAt  DateTime @default(now())
-  createdAt  DateTime @default(now())
+  /// Where this position came from, copied from the keyword at check time so a
+  /// recorded position can always be read back with its own configuration
+  /// rather than whatever the keyword happens to say later.
+  device         Device
+  locationCode   Int
+  googleDomain   String
+  rankCheckId    String?
+  checkedAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   keyword   Keyword    @relation(fields: [keywordId], references: [id], onDelete: Cascade)
   rankCheck RankCheck? @relation(fields: [rankCheckId], references: [id], onDelete: SetNull)
@@ -131,6 +157,7 @@ model Ranking {
   @@index([keywordId])
   @@index([checkedAt])
   @@index([keywordId, checkedAt])
+  @@index([keywordId, device, checkedAt])
   @@index([rankCheckId])
 }
 
@@ -155,7 +182,12 @@ model RankCheck {
   @@index([projectId, createdAt])
 }
 
-/// Short-lived SERP response cache, keyed by keyword+country+language+device+depth.
+/// Short-lived response cache.
+///
+/// Holds two kinds of row, told apart by the key prefix: SERP responses keyed
+/// by keyword+location+language+device+depth, and the DataForSEO city list for
+/// a country. Both are provider responses with a TTL, so they share one table
+/// rather than duplicating the same three columns in a second model.
 model SerpCache {
   id        String   @id @default(cuid())
   cacheKey  String   @unique

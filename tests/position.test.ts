@@ -205,11 +205,14 @@ describe('findDomainPosition', () => {
 });
 
 describe('buildSerpTask', () => {
-  it('maps country, language and device to DataForSEO fields', () => {
+  it('maps location, language and device to DataForSEO fields', () => {
     const task = buildSerpTask({
       keyword: 'microsoft reseller india',
       domain: 'wroffy.com',
       country: 'IN',
+      city: null,
+      locationCode: 2356,
+      googleDomain: 'google.co.in',
       language: 'en',
       device: 'DESKTOP',
       results: 100,
@@ -221,8 +224,25 @@ describe('buildSerpTask', () => {
       language_code: 'en',
       device: 'desktop',
       depth: 100,
-      se_domain: 'google.com',
+      se_domain: 'google.co.in',
     });
+  });
+
+  it('sends the city location code, not the country, when a city was chosen', () => {
+    const task = buildSerpTask({
+      keyword: 'autodesk reseller',
+      domain: 'wroffy.com',
+      country: 'IN',
+      city: 'New Delhi,Delhi',
+      locationCode: 9061259,
+      googleDomain: 'google.co.in',
+      language: 'en',
+      device: 'DESKTOP',
+      results: 100,
+    });
+
+    expect(task.location_code).toBe(9061259);
+    expect(task.location_code).not.toBe(2356);
   });
 
   it('maps mobile to a mobile OS', () => {
@@ -230,6 +250,9 @@ describe('buildSerpTask', () => {
       keyword: 'k',
       domain: 'wroffy.com',
       country: 'US',
+      city: null,
+      locationCode: 2840,
+      googleDomain: 'google.com',
       language: 'en',
       device: 'MOBILE',
       results: 50,
@@ -244,6 +267,9 @@ describe('buildSerpTask', () => {
       keyword: 'k',
       domain: 'wroffy.com',
       country: 'GB',
+      city: null,
+      locationCode: 2826,
+      googleDomain: 'google.co.uk',
       language: 'en',
       device: 'DESKTOP',
       results: 10,

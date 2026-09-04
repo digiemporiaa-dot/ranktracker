@@ -13,6 +13,8 @@ import {
   route,
 } from '@/lib/api';
 import { updateProjectSchema } from '@/lib/validation';
+import { resolveLocation } from '@/lib/locations';
+import type { CountryCode } from '@/config/serp';
 import { getKeywordRows, summarize } from '@/lib/queries';
 import { logger } from '@/lib/logger';
 
@@ -43,10 +45,11 @@ export async function GET(_request: Request, { params }: Params) {
  * particular domain*, so changing it would leave one project's history
  * describing two different websites. A different domain means a new project.
  *
- * Changing country / language / device only changes the defaults applied to
- * keywords added afterwards. Existing Keyword rows keep their own values,
- * because (projectId, keyword, country, language, device) is the keyword's
- * identity.
+ * Changing the location, language or devices only changes the defaults applied
+ * to keywords added afterwards. Existing Keyword rows keep their own values,
+ * because (projectId, keyword, locationCode, language, device) is the
+ * keyword's identity — rewriting them would silently re-label history that was
+ * measured somewhere else.
  */
 export async function PATCH(request: Request, { params }: Params) {
   return route('PATCH /api/projects/[id]', async ({ requestId }) => {
@@ -58,14 +61,42 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const input = await parseBody(request, updateProjectSchema);
 
+    // Country and city are resolved together: a city only means anything
+    // inside a country. Moving the project to a different country without
+    // naming a new city drops back to country-level rather than carrying a
+    // city that does not exist there.
+    const locationChanged = input.country !== undefined || input.city !== undefined;
+
+    const location = locationChanged
+      ? await resolveLocation(
+          {
+            country: input.country ?? (project.country as CountryCode),
+            city:
+              input.city !== undefined
+                ? input.city
+                : input.country !== undefined
+                  ? null
+                  : project.city,
+          },
+          requestId,
+        )
+      : null;
+
     try {
       const updated = await prisma.project.update({
         where: { id: project.id },
         data: {
           ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.country !== undefined ? { country: input.country } : {}),
+          ...(location
+            ? {
+                country: location.country,
+                city: location.city,
+                locationCode: location.locationCode,
+                googleDomain: location.googleDomain,
+              }
+            : {}),
           ...(input.language !== undefined ? { language: input.language } : {}),
-          ...(input.device !== undefined ? { device: input.device } : {}),
+          ...(input.devices !== undefined ? { devices: input.devices } : {}),
         },
       });
 

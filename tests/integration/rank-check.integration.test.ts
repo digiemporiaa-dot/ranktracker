@@ -160,7 +160,17 @@ describeIf('rank check pipeline (integration)', () => {
     const { startRankCheck } = await import('@/lib/rank-check');
     const keywords = await prisma.keyword.findMany({
       where: { projectId },
-      select: { id: true, keyword: true, targetUrl: true, country: true, language: true, device: true },
+      select: {
+        id: true,
+        keyword: true,
+        targetUrl: true,
+        country: true,
+        city: true,
+        locationCode: true,
+        googleDomain: true,
+        language: true,
+        device: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -284,7 +294,17 @@ describeIf('rank check pipeline (integration)', () => {
     const { startRankCheck } = await import('@/lib/rank-check');
     const keywords = await prisma.keyword.findMany({
       where: { projectId },
-      select: { id: true, keyword: true, targetUrl: true, country: true, language: true, device: true },
+      select: {
+        id: true,
+        keyword: true,
+        targetUrl: true,
+        country: true,
+        city: true,
+        locationCode: true,
+        googleDomain: true,
+        language: true,
+        device: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
 

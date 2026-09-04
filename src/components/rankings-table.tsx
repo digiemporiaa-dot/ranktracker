@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownUp, ExternalLink, Loader2, Search, Trash2 } from 'lucide-react';
+import { ArrowDownUp, ExternalLink, Loader2, MapPin, Search, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -26,13 +26,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { RANKING_FILTERS, matchesFilter, type ChangeKind, type RankingFilter } from '@/lib/ranking';
+import {
+  DEVICE_FILTERS,
+  RANKING_FILTERS,
+  groupByDevice,
+  matchesDevice,
+  matchesFilter,
+  type ChangeKind,
+  type DeviceFilter,
+  type RankingFilter,
+} from '@/lib/ranking';
 import { cn, displayUrl, formatRelativeDay } from '@/lib/utils';
 
 export type RankingRow = {
   id: string;
   keyword: string;
   targetUrl: string | null;
+  /** DESKTOP or MOBILE. One row per device: they are never merged. */
+  device: string;
+  country: string;
+  city: string | null;
+  locationCode: number;
+  language: string;
   position: number | null;
   rankingUrl: string | null;
   checkedAt: string | null;
@@ -51,6 +66,12 @@ const PAGE_SIZE = 50;
  *
  * Filtering, search and sorting run in the browser over the rows the server
  * already sent (latest + previous ranking only — never the whole history).
+ *
+ * Each row is one keyword on one device. With the device filter on "All" the
+ * rows are pivoted so desktop and mobile sit in their own columns; picking a
+ * device shows that device's positions on their own. Either way the two are
+ * only ever displayed together, never combined: a keyword tracked on desktop
+ * alone shows nothing under Mobile rather than repeating its desktop position.
  */
 export function RankingsTable({
   rows,
@@ -66,7 +87,7 @@ export function RankingsTable({
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState<'row' | 'bulk' | null>(null);
-  const [rowTarget, setRowTarget] = useState<RankingRow | null>(null);
+  const [rowTarget, setRowTarget] = useState<{ keyword: string; ids: string[] } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -80,14 +101,23 @@ export function RankingsTable({
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<RankingFilter>('all');
+  const [device, setDevice] = useState<DeviceFilter>('all');
   const [sort, setSort] = useState<SortField>('position');
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
 
+  // More than one location in the same project happens when the project's
+  // location was changed and more keywords were added afterwards. The old
+  // keywords keep their own, so the table has to say which is which.
+  const showLocation = useMemo(
+    () => new Set(rows.map((row) => row.locationCode)).size > 1,
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
 
-    const result = rows.filter((row) => {
+    const result = matchesDevice(rows, device).filter((row) => {
       if (removed.has(row.id)) return false;
       if (needle && !row.keyword.toLowerCase().includes(needle)) return false;
       return matchesFilter(filter, row.position, row.changeKind);
@@ -118,11 +148,47 @@ export function RankingsTable({
         }
       }
     });
-  }, [rows, removed, search, filter, sort, direction]);
+  }, [rows, removed, search, filter, device, sort, direction]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const grouped = device === 'all';
+
+  /** One entry per visible line: a pivoted group, or a single-device row. */
+  const lines = useMemo(() => {
+    if (!grouped) {
+      return filtered.map((row) => ({
+        key: row.id,
+        keyword: row.keyword,
+        locationCode: row.locationCode,
+        city: row.city,
+        country: row.country,
+        targetUrl: row.targetUrl,
+        desktop: row.device === 'MOBILE' ? null : row,
+        mobile: row.device === 'MOBILE' ? row : null,
+        single: row as RankingRow | null,
+        keywordIds: [row.id],
+      }));
+    }
+
+    return groupByDevice(filtered).map((group) => {
+      const sample = group.desktop ?? group.mobile;
+      return {
+        key: group.key,
+        keyword: group.keyword,
+        locationCode: group.locationCode,
+        city: sample?.city ?? null,
+        country: sample?.country ?? '',
+        targetUrl: sample?.targetUrl ?? null,
+        desktop: group.desktop,
+        mobile: group.mobile,
+        single: null as RankingRow | null,
+        keywordIds: group.keywordIds,
+      };
+    });
+  }, [filtered, grouped]);
+
+  const totalPages = Math.max(1, Math.ceil(lines.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const visible = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visible = lines.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   function toggleSort(field: SortField) {
     if (sort === field) {
@@ -134,15 +200,16 @@ export function RankingsTable({
     setPage(1);
   }
 
-  const visibleIds = visible.map((row) => row.id);
-  const allOnPageSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  // Selection is always by keyword id, so a pivoted line selects both of its
+  // devices and a bulk delete removes exactly the rows the user can see.
+  const visibleIds = visible.flatMap((line) => line.keywordIds);
+  const allOnPageSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
 
-  function toggleRow(id: string) {
+  function toggleLine(ids: string[]) {
     setSelected((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const isSelected = ids.every((id) => next.has(id));
+      ids.forEach((id) => (isSelected ? next.delete(id) : next.add(id)));
       return next;
     });
   }
@@ -157,34 +224,37 @@ export function RankingsTable({
   }
 
   /** Hide the ids straight away, and put them back if the request fails. */
-  async function runDelete(ids: string[], request: () => Promise<Response>) {
+  async function runDelete(
+    ids: string[],
+    perform: () => Promise<{ ok: boolean; deleted: number; error?: string }>,
+  ) {
     if (!projectId || ids.length === 0) return;
 
     setDeleteError(null);
     setDeleting(true);
     setRemoved((current) => new Set([...current, ...ids]));
 
-    try {
-      const response = await request();
-      const data = await response.json().catch(() => ({}));
+    const restore = () =>
+      setRemoved((current) => {
+        const next = new Set(current);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
 
-      if (!response.ok) {
-        setRemoved((current) => {
-          const next = new Set(current);
-          ids.forEach((id) => next.delete(id));
-          return next;
-        });
-        setDeleteError(data.error ?? 'That could not be deleted. Please try again.');
+    try {
+      const result = await perform();
+
+      if (!result.ok) {
+        restore();
+        setDeleteError(result.error ?? 'That could not be deleted. Please try again.');
         return;
       }
 
-      const deleted = typeof data.deleted === 'number' ? data.deleted : ids.length;
-
       // Report a partial result honestly rather than claiming full success.
       toast(
-        deleted === ids.length
-          ? `Deleted ${deleted} keyword${deleted === 1 ? '' : 's'}`
-          : `Deleted ${deleted} of ${ids.length} keywords`,
+        result.deleted === ids.length
+          ? `Deleted ${result.deleted} keyword${result.deleted === 1 ? '' : 's'}`
+          : `Deleted ${result.deleted} of ${ids.length} keywords`,
       );
 
       setConfirming(null);
@@ -192,33 +262,56 @@ export function RankingsTable({
       setSelected(new Set());
       router.refresh();
     } catch {
-      setRemoved((current) => {
-        const next = new Set(current);
-        ids.forEach((id) => next.delete(id));
-        return next;
-      });
+      restore();
       setDeleteError('We could not reach the server. Please try again.');
     } finally {
       setDeleting(false);
     }
   }
 
-  const deleteRow = (row: RankingRow) =>
-    runDelete([row.id], () =>
-      fetch(`/api/projects/${projectId}/keywords?keywordId=${encodeURIComponent(row.id)}`, {
-        method: 'DELETE',
-      }),
-    );
+  /**
+   * One line can stand for both devices, so deleting it deletes both rows.
+   * They go one at a time through the single-keyword route: that is what
+   * removing a couple of keywords is, and it keeps the wholesale-delete
+   * allowance for wholesale deletes.
+   */
+  const deleteLine = (ids: string[], keyword: string) =>
+    runDelete(ids, async () => {
+      let deleted = 0;
+      let error: string | undefined;
+
+      for (const id of ids) {
+        const response = await fetch(
+          `/api/projects/${projectId}/keywords?keywordId=${encodeURIComponent(id)}`,
+          { method: 'DELETE' },
+        );
+        if (response.ok) {
+          deleted += 1;
+        } else {
+          const data = await response.json().catch(() => ({}));
+          error = data.error ?? `"${keyword}" could not be deleted.`;
+          break;
+        }
+      }
+
+      return { ok: deleted > 0, deleted, error: deleted === 0 ? error : undefined };
+    });
 
   const deleteSelected = () => {
     const ids = [...selected];
-    return runDelete(ids, () =>
-      fetch(`/api/projects/${projectId}/keywords/bulk-delete`, {
+    return runDelete(ids, async () => {
+      const response = await fetch(`/api/projects/${projectId}/keywords/bulk-delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keywordIds: ids }),
-      }),
-    );
+      });
+      const data = await response.json().catch(() => ({}));
+      return {
+        ok: response.ok,
+        deleted: typeof data.deleted === 'number' ? data.deleted : ids.length,
+        error: data.error,
+      };
+    });
   };
 
   const SortableHead = ({ field, label }: { field: SortField; label: string }) => (
@@ -235,6 +328,26 @@ export function RankingsTable({
       </button>
     </TableHead>
   );
+
+  /** Position + change for one device, or a dash when it is not tracked. */
+  const DeviceCells = ({ row }: { row: RankingRow | null }) =>
+    row ? (
+      <>
+        <TableCell>
+          <PositionCell position={row.position} />
+        </TableCell>
+        <TableCell>
+          <ChangeCell kind={row.changeKind} label={row.changeLabel} />
+        </TableCell>
+      </>
+    ) : (
+      <>
+        <TableCell className="text-muted-foreground">—</TableCell>
+        <TableCell className="text-muted-foreground">—</TableCell>
+      </>
+    );
+
+  const columnCount = (grouped ? 6 : 5) + (canDelete ? 2 : 0);
 
   return (
     <div className="space-y-4">
@@ -267,35 +380,63 @@ export function RankingsTable({
             </Button>
           ) : null}
           <p className="text-sm text-muted-foreground">
-            {filtered.length} of {rows.length} keyword{rows.length === 1 ? '' : 's'}
+            {lines.length} of {rows.length} keyword{rows.length === 1 ? '' : 's'}
           </p>
         </div>
       </div>
 
       {deleteError && !confirming ? <Alert tone="error">{deleteError}</Alert> : null}
 
-      <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
-        {RANKING_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => {
-              setFilter(value);
-              setPage(1);
-            }}
-            className={cn(
-              'whitespace-nowrap rounded-full border px-3 py-1 text-sm transition-colors',
-              filter === value
-                ? 'border-primary bg-primary/10 font-medium text-primary'
-                : 'border-border bg-card text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
+          {RANKING_FILTERS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setFilter(value);
+                setPage(1);
+              }}
+              className={cn(
+                'whitespace-nowrap rounded-full border px-3 py-1 text-sm transition-colors',
+                filter === value
+                  ? 'border-primary bg-primary/10 font-medium text-primary'
+                  : 'border-border bg-card text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          className="flex shrink-0 gap-1.5"
+          role="group"
+          aria-label="Filter by device"
+        >
+          {DEVICE_FILTERS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={device === value}
+              onClick={() => {
+                setDevice(value);
+                setPage(1);
+              }}
+              className={cn(
+                'whitespace-nowrap rounded-full border px-3 py-1 text-sm transition-colors',
+                device === value
+                  ? 'border-primary bg-primary/10 font-medium text-primary'
+                  : 'border-border bg-card text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -311,9 +452,20 @@ export function RankingsTable({
                 </TableHead>
               ) : null}
               <SortableHead field="keyword" label="Keyword" />
-              <SortableHead field="position" label="Position" />
-              <SortableHead field="change" label="Change" />
-              <TableHead>Ranking URL</TableHead>
+              {grouped ? (
+                <>
+                  <TableHead>Desktop</TableHead>
+                  <TableHead>Desktop change</TableHead>
+                  <TableHead>Mobile</TableHead>
+                  <TableHead>Mobile change</TableHead>
+                </>
+              ) : (
+                <>
+                  <SortableHead field="position" label="Position" />
+                  <SortableHead field="change" label="Change" />
+                  <TableHead>Ranking URL</TableHead>
+                </>
+              )}
               <SortableHead field="checkedAt" label="Last Checked" />
               {canDelete ? (
                 <TableHead className="w-12">
@@ -326,77 +478,113 @@ export function RankingsTable({
             {visible.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={canDelete ? 7 : 5}
+                  colSpan={columnCount}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   No keywords match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              visible.map((row) => (
-                <TableRow key={row.id} data-selected={selected.has(row.id) ? '' : undefined}>
-                  {canDelete ? (
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(row.id)}
-                        onChange={() => toggleRow(row.id)}
-                        aria-label={`Select ${row.keyword}`}
-                        className="h-4 w-4 cursor-pointer rounded border-input accent-primary"
-                      />
-                    </TableCell>
-                  ) : null}
-                  <TableCell className="max-w-[22rem]">
-                    <p className="truncate font-medium">{row.keyword}</p>
-                    {row.targetUrl ? (
-                      <p className="truncate text-xs text-muted-foreground">
-                        Target: {row.targetUrl}
-                      </p>
+              visible.map((line) => {
+                const lineSelected = line.keywordIds.every((id) => selected.has(id));
+                // The most recent of the devices on this line. ISO timestamps
+                // sort lexicographically, so the last one is the newest.
+                const checkedAt =
+                  [line.desktop?.checkedAt, line.mobile?.checkedAt]
+                    .filter((value): value is string => Boolean(value))
+                    .sort()
+                    .pop() ?? null;
+
+                return (
+                  <TableRow key={line.key} data-selected={lineSelected ? '' : undefined}>
+                    {canDelete ? (
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={lineSelected}
+                          onChange={() => toggleLine(line.keywordIds)}
+                          aria-label={`Select ${line.keyword}`}
+                          className="h-4 w-4 cursor-pointer rounded border-input accent-primary"
+                        />
+                      </TableCell>
                     ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <PositionCell position={row.position} />
-                  </TableCell>
-                  <TableCell>
-                    <ChangeCell kind={row.changeKind} label={row.changeLabel} />
-                  </TableCell>
-                  <TableCell className="max-w-[20rem]">
-                    {row.rankingUrl ? (
-                      <a
-                        href={row.rankingUrl}
-                        target="_blank"
-                        rel="noopener noreferrer nofollow"
-                        className="inline-flex max-w-full items-center gap-1 truncate text-primary hover:underline"
-                        title={row.rankingUrl}
-                      >
-                        <span className="truncate">{displayUrl(row.rankingUrl)}</span>
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {row.checkedAt ? formatRelativeDay(row.checkedAt) : <Badge variant="outline">Never</Badge>}
-                  </TableCell>
-                  {canDelete ? (
-                    <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRowTarget(row);
-                          setDeleteError(null);
-                          setConfirming('row');
-                        }}
-                        aria-label={`Delete ${row.keyword}`}
-                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    <TableCell className="max-w-[22rem]">
+                      <p className="truncate font-medium">{line.keyword}</p>
+                      {line.targetUrl ? (
+                        <p className="truncate text-xs text-muted-foreground">
+                          Target: {line.targetUrl}
+                        </p>
+                      ) : null}
+                      {showLocation ? (
+                        <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                          <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                          {line.city ?? line.country}
+                        </p>
+                      ) : null}
                     </TableCell>
-                  ) : null}
-                </TableRow>
-              ))
+
+                    {grouped ? (
+                      <>
+                        <DeviceCells row={line.desktop} />
+                        <DeviceCells row={line.mobile} />
+                      </>
+                    ) : (
+                      <>
+                        <TableCell>
+                          <PositionCell position={line.single?.position ?? null} />
+                        </TableCell>
+                        <TableCell>
+                          <ChangeCell
+                            kind={line.single?.changeKind ?? 'none'}
+                            label={line.single?.changeLabel ?? '—'}
+                          />
+                        </TableCell>
+                        <TableCell className="max-w-[20rem]">
+                          {line.single?.rankingUrl ? (
+                            <a
+                              href={line.single.rankingUrl}
+                              target="_blank"
+                              rel="noopener noreferrer nofollow"
+                              className="inline-flex max-w-full items-center gap-1 truncate text-primary hover:underline"
+                              title={line.single.rankingUrl}
+                            >
+                              <span className="truncate">{displayUrl(line.single.rankingUrl)}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </>
+                    )}
+
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {checkedAt ? (
+                        formatRelativeDay(checkedAt)
+                      ) : (
+                        <Badge variant="outline">Never</Badge>
+                      )}
+                    </TableCell>
+
+                    {canDelete ? (
+                      <TableCell>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRowTarget({ keyword: line.keyword, ids: line.keywordIds });
+                            setDeleteError(null);
+                            setConfirming('row');
+                          }}
+                          aria-label={`Delete ${line.keyword}`}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -460,7 +648,10 @@ export function RankingsTable({
                 </>
               ) : (
                 <>
-                  <strong className="text-foreground">{rowTarget?.keyword}</strong> and its
+                  <strong className="text-foreground">{rowTarget?.keyword}</strong>
+                  {rowTarget && rowTarget.ids.length > 1
+                    ? ' — on both desktop and mobile — and its'
+                    : ' and its'}{' '}
                   entire position history will be deleted permanently — not just removed from
                   future checks. This cannot be undone.
                 </>
@@ -486,7 +677,7 @@ export function RankingsTable({
               disabled={deleting}
               onClick={() => {
                 if (confirming === 'bulk') void deleteSelected();
-                else if (rowTarget) void deleteRow(rowTarget);
+                else if (rowTarget) void deleteLine(rowTarget.ids, rowTarget.keyword);
               }}
             >
               {deleting ? (

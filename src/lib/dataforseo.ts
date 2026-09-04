@@ -4,7 +4,6 @@ import { env, hasDataForSeoCredentials } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { hostMatchesDomain, hostnameFromUrl, normalizeDomain } from '@/lib/domain';
 import {
-  getCountry,
   getLanguage,
   toDataForSeoDevice,
   type CountryCode,
@@ -98,6 +97,15 @@ export type RankingLookup = {
   keyword: string;
   domain: string;
   country: CountryCode;
+  /** Display name of the city, or null for a country-level search. */
+  city: string | null;
+  /**
+   * The DataForSEO location actually searched — a country code, or a city code
+   * when one was chosen. Always resolved on the server; never sent by a client.
+   */
+  locationCode: number;
+  /** The Google property searched, e.g. "google.co.in". */
+  googleDomain: string;
   language: LanguageCode;
   device: DeviceCode;
   results: number;
@@ -333,19 +341,27 @@ export function findDomainPosition(
   return { position: null, rankingUrl: null };
 }
 
-/** Build the live/advanced request body for one keyword. */
+/**
+ * Build the live/advanced request body for one keyword.
+ *
+ * `location_code` is whatever the keyword resolved to — the country when no
+ * city was chosen, the city otherwise — so a country-level and a city-level
+ * check are two different requests, never the same one relabelled.
+ *
+ * `device` is passed straight through. A mobile position always comes from a
+ * mobile request; a desktop result is never reused for one.
+ */
 export function buildSerpTask(lookup: RankingLookup) {
-  const country = getCountry(lookup.country);
   const language = getLanguage(lookup.language);
 
   return {
     keyword: lookup.keyword,
-    location_code: country.locationCode,
+    location_code: lookup.locationCode,
     language_code: language.languageCode,
     device: toDataForSeoDevice(lookup.device),
     os: lookup.device === 'MOBILE' ? 'android' : 'windows',
     depth: lookup.results,
-    se_domain: 'google.com',
+    se_domain: lookup.googleDomain,
   };
 }
 
@@ -373,15 +389,40 @@ export async function checkKeywordRanking(
   return { position, rankingUrl, resultsChecked: organic.length };
 }
 
-/** Country locations reported by DataForSEO, used by the verification script. */
-export async function fetchCountryLocations(
+export type ProviderLocation = {
+  location_code: number;
+  location_name: string;
+  country_iso_code?: string;
+  location_type?: string;
+};
+
+/**
+ * The locations DataForSEO supports.
+ *
+ * With a country ISO code this asks for that country's subtree, which is the
+ * difference between a few thousand rows and every location on earth. The
+ * endpoint is a reference list and costs nothing to call.
+ */
+export async function fetchLocationList(
+  countryIso?: string,
   requestId = 'locations',
-): Promise<{ location_code: number; location_name: string; country_iso_code?: string; location_type?: string }[]> {
-  const payload = await callDataForSeo<{
-    tasks?: { result?: unknown[] }[];
-  }>(LOCATIONS_PATH, null, requestId);
+): Promise<ProviderLocation[]> {
+  const path = countryIso ? `${LOCATIONS_PATH}/${encodeURIComponent(countryIso)}` : LOCATIONS_PATH;
+
+  const payload = await callDataForSeo<{ tasks?: { result?: unknown[] }[] }>(
+    path,
+    null,
+    requestId,
+  );
 
   const result = payload?.tasks?.[0]?.result;
   if (!Array.isArray(result)) return [];
-  return result as { location_code: number; location_name: string }[];
+  return result as ProviderLocation[];
+}
+
+/** Country locations reported by DataForSEO, used by the verification script. */
+export async function fetchCountryLocations(
+  requestId = 'locations',
+): Promise<ProviderLocation[]> {
+  return fetchLocationList(undefined, requestId);
 }

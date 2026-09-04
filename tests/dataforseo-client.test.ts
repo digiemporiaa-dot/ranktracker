@@ -59,6 +59,9 @@ describe('DataForSEO transport', () => {
         keyword: 'microsoft reseller india',
         domain: 'wroffy.com',
         country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
         language: 'en',
         device: 'DESKTOP',
         results: 100,
@@ -86,6 +89,7 @@ describe('DataForSEO transport', () => {
       language_code: 'en',
       device: 'desktop',
       depth: 100,
+      se_domain: 'google.co.in',
     });
   });
 
@@ -98,7 +102,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-2',
     );
 
@@ -116,7 +130,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp, DataForSeoError } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-3',
     ).catch((error) => error);
 
@@ -136,7 +160,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-4',
     ).catch((error) => error);
 
@@ -154,7 +188,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-5',
     ).catch((error) => error);
 
@@ -174,7 +218,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-6',
     );
 
@@ -192,7 +246,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-7',
     ).catch((error) => error);
 
@@ -213,7 +277,17 @@ describe('DataForSEO transport', () => {
 
     const { fetchSerp } = await loadClient();
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-8',
     );
 
@@ -234,7 +308,17 @@ describe('DataForSEO transport', () => {
 
     await expect(
       fetchSerp(
-        { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+        {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
         'req-9',
       ),
     ).rejects.toBeInstanceOf(DataForSeoNotConfiguredError);
@@ -253,7 +337,17 @@ describe('DataForSEO transport', () => {
     });
 
     const promise = fetchSerp(
-      { keyword: 'k', domain: 'wroffy.com', country: 'IN', language: 'en', device: 'DESKTOP', results: 10 },
+      {
+        keyword: 'k',
+        domain: 'wroffy.com',
+        country: 'IN',
+        city: null,
+        locationCode: 2356,
+        googleDomain: 'google.co.in',
+        language: 'en',
+        device: 'DESKTOP',
+        results: 10,
+      },
       'req-10',
     ).catch((error) => error);
 

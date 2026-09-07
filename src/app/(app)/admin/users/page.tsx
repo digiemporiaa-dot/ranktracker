@@ -7,7 +7,7 @@ import { USER_SELECT } from '@/lib/users';
 import { PageHeader } from '@/components/page-header';
 import { AdminUsers, type AdminUserRow } from '@/components/admin-users';
 
-export const metadata = { title: 'Users · OurRankTracker' };
+export const metadata = { title: 'Users · Wroffy Rank' };
 export const dynamic = 'force-dynamic';
 
 /**

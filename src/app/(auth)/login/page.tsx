@@ -4,7 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AuthForm } from '@/components/auth-form';
 
-export const metadata = { title: 'Sign in · OurRankTracker' };
+export const metadata = { title: 'Sign in · Wroffy Rank' };
 
 export const dynamic = 'force-dynamic';
 

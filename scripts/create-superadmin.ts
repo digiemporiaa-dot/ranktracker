@@ -169,7 +169,7 @@ async function main() {
   }
 
   console.log('');
-  console.log('  OurRankTracker — create superadmin');
+  console.log('  Wroffy Rank — create superadmin');
   console.log(`  Database: ${process.env.DATABASE_URL ? 'from DATABASE_URL' : 'NOT CONFIGURED'}`);
   console.log(`  Email:    ${email}`);
   console.log('');

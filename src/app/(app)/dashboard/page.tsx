@@ -13,7 +13,7 @@ import { PageHeader } from '@/components/page-header';
 import { StatsCards } from '@/components/stats-cards';
 import { formatDateTime } from '@/lib/utils';
 
-export const metadata = { title: 'Dashboard · OurRankTracker' };
+export const metadata = { title: 'Dashboard · Wroffy Rank' };
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {

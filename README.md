@@ -1,4 +1,4 @@
-# OurRankTracker
+# Wroffy Rank
 
 A SEO keyword rank tracker. Create a project for a website, import a keyword list,
 run a ranking check, and see where you rank on Google — with position history and

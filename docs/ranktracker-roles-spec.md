@@ -1,6 +1,6 @@
 # Feature Spec — Roles & Access Control
 
-Target repo: `digiemporiaa-dot/ranktracker` (OurRankTracker)
+Target repo: `digiemporiaa-dot/ranktracker` (Wroffy Rank)
 
 **Build this BEFORE the CRUD spec.** Every ownership check in this app becomes
 role-aware. Writing the project-edit and keyword-delete routes first means

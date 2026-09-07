@@ -13,7 +13,7 @@ import { PageHeader } from '@/components/page-header';
 import { OwnerFilter } from '@/components/owner-filter';
 import { SearchSummaryBadges } from '@/components/search-summary';
 
-export const metadata = { title: 'Projects · OurRankTracker' };
+export const metadata = { title: 'Projects · Wroffy Rank' };
 export const dynamic = 'force-dynamic';
 
 type Search = { searchParams: Promise<{ owner?: string }> };

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageHeader } from '@/components/page-header';
 import { COUNTRIES, COUNTRY_CODES, DEPTH_OPTIONS, LANGUAGES, LANGUAGE_CODES } from '@/config/serp';
 
-export const metadata = { title: 'Settings · OurRankTracker' };
+export const metadata = { title: 'Settings · Wroffy Rank' };
 export const dynamic = 'force-dynamic';
 
 /**

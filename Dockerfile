@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# OurRankTracker production image.
+# Wroffy Rank production image.
 #
 # Multi-stage: dependencies, build, then a slim runtime that carries only the
 # Next.js standalone server output.

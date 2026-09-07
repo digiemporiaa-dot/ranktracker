@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageHeader } from '@/components/page-header';
 import { ProjectForm } from '@/components/project-form';
 
-export const metadata = { title: 'New project · OurRankTracker' };
+export const metadata = { title: 'New project · Wroffy Rank' };
 
 export const dynamic = 'force-dynamic';
 

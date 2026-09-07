@@ -8,7 +8,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <LineChart className="h-5 w-5" />
         </span>
-        <span className="text-lg font-semibold tracking-tight">OurRankTracker</span>
+        <span className="text-lg font-semibold tracking-tight">Wroffy Rank</span>
       </Link>
       <div className="w-full max-w-sm">{children}</div>
     </div>

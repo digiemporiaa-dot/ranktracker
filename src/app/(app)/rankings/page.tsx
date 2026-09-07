@@ -13,7 +13,7 @@ import { StatsCards } from '@/components/stats-cards';
 import { RankingsTable, type RankingRow } from '@/components/rankings-table';
 import { formatDateTime } from '@/lib/utils';
 
-export const metadata = { title: 'Rankings · OurRankTracker' };
+export const metadata = { title: 'Rankings · Wroffy Rank' };
 export const dynamic = 'force-dynamic';
 
 type Search = { searchParams: Promise<{ project?: string }> };

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'OurRankTracker',
+  title: 'Wroffy Rank',
   description: 'Track your Google keyword rankings.',
 };
 

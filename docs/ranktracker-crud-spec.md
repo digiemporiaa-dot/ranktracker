@@ -1,6 +1,6 @@
 # Feature Spec — Project Edit/Delete + Keyword Delete/Clear
 
-Target repo: `digiemporiaa-dot/ranktracker` (OurRankTracker)
+Target repo: `digiemporiaa-dot/ranktracker` (Wroffy Rank)
 
 ---
 

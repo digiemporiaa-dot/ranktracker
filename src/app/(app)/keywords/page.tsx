@@ -20,7 +20,7 @@ import {
 import { deviceLabel } from '@/config/serp';
 import { locationLabel } from '@/components/search-summary';
 
-export const metadata = { title: 'Keywords · OurRankTracker' };
+export const metadata = { title: 'Keywords · Wroffy Rank' };
 export const dynamic = 'force-dynamic';
 
 export default async function KeywordsPage() {

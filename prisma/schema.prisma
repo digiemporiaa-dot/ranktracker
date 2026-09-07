@@ -1,4 +1,4 @@
-// OurRankTracker — Prisma schema
+// Wroffy Rank — Prisma schema
 // Datasource: PostgreSQL
 
 generator client {

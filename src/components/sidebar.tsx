@@ -81,7 +81,7 @@ export function Sidebar({
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <LineChart className="h-4 w-4" />
           </span>
-          <span className="font-semibold tracking-tight">OurRankTracker</span>
+          <span className="font-semibold tracking-tight">Wroffy Rank</span>
         </Link>
         <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Toggle navigation">
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -106,7 +106,7 @@ export function Sidebar({
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <LineChart className="h-4 w-4" />
           </span>
-          <span className="font-semibold tracking-tight">OurRankTracker</span>
+          <span className="font-semibold tracking-tight">Wroffy Rank</span>
         </Link>
 
         {nav}

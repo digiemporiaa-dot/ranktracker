@@ -66,6 +66,7 @@ export default async function ProjectPage({ params }: Params) {
     country: project.country,
     language: project.language,
     device: project.device,
+    searchDomain: project.searchDomain,
   };
 
   return (
@@ -83,6 +84,7 @@ export default async function ProjectPage({ params }: Params) {
               {COUNTRIES[project.country as CountryCode]?.label ?? project.country}
             </Badge>
             <Badge variant="outline">{project.device === 'MOBILE' ? 'Mobile' : 'Desktop'}</Badge>
+            <Badge variant="outline">{project.searchDomain}</Badge>
             {project.isDemo ? <Badge variant="secondary">Demo data</Badge> : null}
           </span>
         }

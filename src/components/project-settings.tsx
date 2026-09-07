@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Lock, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Pencil, Trash2 } from 'lucide-react';
 
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -22,9 +22,12 @@ import {
 import {
   COUNTRIES,
   COUNTRY_CODES,
+  DEFAULT_SEARCH_DOMAIN,
   DEVICES,
   LANGUAGES,
   LANGUAGE_CODES,
+  SEARCH_DOMAINS,
+  suggestedSearchDomain,
 } from '@/config/serp';
 
 export type EditableProject = {
@@ -34,6 +37,7 @@ export type EditableProject = {
   country: string;
   language: string;
   device: string;
+  searchDomain: string;
 };
 
 /** Edit dialog, opened from the project page header. */
@@ -45,28 +49,43 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const [form, setForm] = useState({
+  const initial = {
     name: project.name,
+    domain: project.domain,
     country: project.country,
     language: project.language,
     device: project.device,
-  });
+    searchDomain: project.searchDomain || DEFAULT_SEARCH_DOMAIN,
+  };
+
+  const [form, setForm] = useState(initial);
+  // Acknowledgement that changing the website invalidates existing history.
+  const [confirmDomain, setConfirmDomain] = useState(false);
+
+  // Compared loosely: the server normalizes "https://WWW.X.com/" to "x.com",
+  // so only an obviously different value should trip the warning.
+  const domainChanged =
+    form.domain.trim().toLowerCase() !== project.domain.trim().toLowerCase();
 
   const changed =
     form.name.trim() !== project.name ||
+    domainChanged ||
     form.country !== project.country ||
     form.language !== project.language ||
-    form.device !== project.device;
+    form.device !== project.device ||
+    form.searchDomain !== (project.searchDomain || DEFAULT_SEARCH_DOMAIN);
+
+  // A website change is only allowed once the warning has been acknowledged.
+  const blocked = domainChanged && !confirmDomain;
+
+  const suggestion = suggestedSearchDomain(form.country);
+  const showSuggestion = suggestion !== null && form.searchDomain !== suggestion;
 
   function reset(nextOpen: boolean) {
     setOpen(nextOpen);
     if (!nextOpen) {
-      setForm({
-        name: project.name,
-        country: project.country,
-        language: project.language,
-        device: project.device,
-      });
+      setForm(initial);
+      setConfirmDomain(false);
       setError(null);
     }
   }
@@ -82,9 +101,12 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name.trim(),
+          domain: form.domain.trim(),
           country: form.country,
           language: form.language,
           device: form.device,
+          searchDomain: form.searchDomain,
+          ...(domainChanged ? { confirmDomainChange: true } : {}),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -95,6 +117,7 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
       }
 
       setOpen(false);
+      setConfirmDomain(false);
       toast('Project saved');
       router.refresh();
     } catch {
@@ -134,17 +157,42 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="edit-domain" className="flex items-center gap-1.5">
-              Website
-              <Lock className="h-3 w-3 text-muted-foreground" aria-hidden />
-            </Label>
-            <Input id="edit-domain" value={project.domain} readOnly disabled />
+            <Label htmlFor="edit-domain">Website</Label>
+            <Input
+              id="edit-domain"
+              value={form.domain}
+              onChange={(event) => setForm({ ...form, domain: event.target.value })}
+              required
+            />
             <p className="text-xs text-muted-foreground">
-              The website cannot be changed. Every recorded position belongs to this domain, so
-              changing it would leave one history describing two different sites. To track a
-              different website, create a new project.
+              We store the domain only, so www and subdomains all count as yours.
             </p>
           </div>
+
+          {domainChanged ? (
+            <div className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+              <p className="flex items-start gap-2 text-sm font-medium text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                This changes what the ranking history means
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Every position already recorded for this project was measured for{' '}
+                <span className="font-mono text-foreground">{project.domain}</span>. If you switch
+                to <span className="font-mono text-foreground">{form.domain.trim()}</span>, the old
+                rows stay in the chart, so one line will describe two different websites. Tracking a
+                genuinely different site is usually better done as a new project.
+              </p>
+              <label className="flex cursor-pointer items-start gap-2 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={confirmDomain}
+                  onChange={(event) => setConfirmDomain(event.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 cursor-pointer rounded border-input accent-destructive"
+                />
+                I understand, change the website anyway
+              </label>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -199,11 +247,45 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
             that way.
           </p>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-search-domain">Search on</Label>
+            <Select
+              id="edit-search-domain"
+              value={form.searchDomain}
+              onChange={(event) => setForm({ ...form, searchDomain: event.target.value })}
+            >
+              {SEARCH_DOMAINS.map((entry) => (
+                <option key={entry.domain} value={entry.domain}>
+                  {entry.label}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Which Google to ask. Unlike the settings above, this applies to every keyword in the
+              project straight away, including ones already added.
+              {showSuggestion ? (
+                <>
+                  {' '}
+                  The local Google for{' '}
+                  {COUNTRIES[form.country as keyof typeof COUNTRIES]?.label ?? form.country} is{' '}
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, searchDomain: suggestion })}
+                    className="font-mono text-primary hover:underline"
+                  >
+                    {suggestion}
+                  </button>
+                  .
+                </>
+              ) : null}
+            </p>
+          </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => reset(false)} disabled={pending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={pending || !changed}>
+            <Button type="submit" disabled={pending || !changed || blocked}>
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Save changes
             </Button>

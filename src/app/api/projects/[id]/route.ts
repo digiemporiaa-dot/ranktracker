@@ -39,14 +39,16 @@ export async function GET(_request: Request, { params }: Params) {
 /**
  * Edit a project.
  *
- * `domain` is not editable. Every Ranking row records a position *for a
- * particular domain*, so changing it would leave one project's history
- * describing two different websites. A different domain means a new project.
+ * Changing `domain` is allowed but guarded. Every Ranking row records a
+ * position *for a particular domain*, so after a change the stored history
+ * describes two different websites. The caller must acknowledge that with
+ * `confirmDomainChange`; the check lives here and not only in the dialog, so
+ * skipping the UI cannot skip the warning.
  *
  * Changing country / language / device only changes the defaults applied to
  * keywords added afterwards. Existing Keyword rows keep their own values,
  * because (projectId, keyword, country, language, device) is the keyword's
- * identity.
+ * identity. `searchDomain` is project-wide and applies to every check.
  */
 export async function PATCH(request: Request, { params }: Params) {
   return route('PATCH /api/projects/[id]', async ({ requestId }) => {
@@ -58,14 +60,26 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const input = await parseBody(request, updateProjectSchema);
 
+    // Only a *real* change of website needs the acknowledgement — re-sending
+    // the domain the project already has is not a change.
+    const domainChanged = input.domain !== undefined && input.domain !== project.domain;
+    if (domainChanged && input.confirmDomainChange !== true) {
+      throw new ApiError(
+        400,
+        'Changing the website makes this project\u2019s existing ranking history describe a different site. Please confirm the change first.',
+      );
+    }
+
     try {
       const updated = await prisma.project.update({
         where: { id: project.id },
         data: {
           ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(domainChanged ? { domain: input.domain } : {}),
           ...(input.country !== undefined ? { country: input.country } : {}),
           ...(input.language !== undefined ? { language: input.language } : {}),
           ...(input.device !== undefined ? { device: input.device } : {}),
+          ...(input.searchDomain !== undefined ? { searchDomain: input.searchDomain } : {}),
         },
       });
 
@@ -74,6 +88,7 @@ export async function PATCH(request: Request, { params }: Params) {
         userId: user.id,
         projectId: project.id,
         fields: Object.keys(input),
+        domainChanged,
       });
 
       return NextResponse.json({ project: updated });

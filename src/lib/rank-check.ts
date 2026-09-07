@@ -7,7 +7,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { checkKeywordRanking, DataForSeoError } from '@/lib/dataforseo';
 import { fetchSerpCached, pruneSerpCache } from '@/lib/serp-cache';
-import type { CountryCode, LanguageCode } from '@/config/serp';
+import type { CountryCode, LanguageCode, SearchDomain } from '@/config/serp';
 
 /**
  * Runs a ranking check for a project.
@@ -25,7 +25,7 @@ type RunnableKeyword = Pick<
 >;
 
 export async function startRankCheck(opts: {
-  project: Pick<Project, 'id' | 'domain' | 'userId'>;
+  project: Pick<Project, 'id' | 'domain' | 'userId' | 'searchDomain'>;
   keywords: RunnableKeyword[];
   depth: number;
   requestId: string;
@@ -58,7 +58,7 @@ export async function startRankCheck(opts: {
 
 async function runRankCheck(opts: {
   rankCheckId: string;
-  project: Pick<Project, 'id' | 'domain' | 'userId'>;
+  project: Pick<Project, 'id' | 'domain' | 'userId' | 'searchDomain'>;
   keywords: RunnableKeyword[];
   depth: number;
   requestId: string;
@@ -80,6 +80,7 @@ async function runRankCheck(opts: {
     userId: project.userId,
     totalKeywords: keywords.length,
     depth,
+    searchDomain: project.searchDomain,
   });
 
   let completed = 0;
@@ -104,6 +105,9 @@ async function runRankCheck(opts: {
           language: keyword.language as LanguageCode,
           device: keyword.device as Device,
           results: depth,
+          // Project-wide: every keyword in a project is checked on the same
+          // Google, so runs stay comparable with each other.
+          searchDomain: project.searchDomain as SearchDomain,
         };
 
         const { organic, cached } = await fetchSerpCached(lookup, requestId);

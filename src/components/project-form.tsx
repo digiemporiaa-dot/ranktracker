@@ -15,9 +15,11 @@ import {
   DEFAULT_COUNTRY,
   DEFAULT_DEVICE,
   DEFAULT_LANGUAGE,
+  DEFAULT_SEARCH_DOMAIN,
   DEVICES,
   LANGUAGES,
   LANGUAGE_CODES,
+  SEARCH_DOMAINS,
 } from '@/config/serp';
 
 export function ProjectForm({ onCancel }: { onCancel?: () => void }) {
@@ -104,6 +106,21 @@ export function ProjectForm({ onCancel }: { onCancel?: () => void }) {
             ))}
           </Select>
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="searchDomain">Search on</Label>
+        <Select id="searchDomain" name="searchDomain" defaultValue={DEFAULT_SEARCH_DOMAIN}>
+          {SEARCH_DOMAINS.map((entry) => (
+            <option key={entry.domain} value={entry.domain}>
+              {entry.label}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Which Google to search. The country above sets where the searcher is; this sets which
+          Google answers. They are usually consistent, but the results can differ.
+        </p>
       </div>
 
       <div className="flex gap-2">

@@ -4,12 +4,14 @@ import { env, hasDataForSeoCredentials } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { hostMatchesDomain, hostnameFromUrl, normalizeDomain } from '@/lib/domain';
 import {
+  DEFAULT_SEARCH_DOMAIN,
   getCountry,
   getLanguage,
   toDataForSeoDevice,
   type CountryCode,
   type DeviceCode,
   type LanguageCode,
+  type SearchDomain,
 } from '@/config/serp';
 
 /**
@@ -101,6 +103,8 @@ export type RankingLookup = {
   language: LanguageCode;
   device: DeviceCode;
   results: number;
+  /** Which Google to ask. Falls back to the historical default when absent. */
+  searchDomain?: SearchDomain;
 };
 
 export type RankingResult = {
@@ -345,7 +349,7 @@ export function buildSerpTask(lookup: RankingLookup) {
     device: toDataForSeoDevice(lookup.device),
     os: lookup.device === 'MOBILE' ? 'android' : 'windows',
     depth: lookup.results,
-    se_domain: 'google.com',
+    se_domain: lookup.searchDomain ?? DEFAULT_SEARCH_DOMAIN,
   };
 }
 

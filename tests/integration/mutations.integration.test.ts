@@ -223,6 +223,84 @@ describeIf('project edit and delete routes (integration)', () => {
     });
   });
 
+  // ---------- website and search domain ----------
+
+  describe('PATCH website and search domain', () => {
+    it('changes the search domain without any confirmation', () => {
+      // Switching which Google is asked does not invalidate anything already
+      // recorded, so it is an ordinary edit.
+      return routes
+        .PATCH(jsonRequest({ searchDomain: 'google.co.in' }, 'PATCH'), params(projectId))
+        .then(async (response) => {
+          expect(response.status).toBe(200);
+          const saved = await prisma.project.findUnique({ where: { id: projectId } });
+          expect(saved?.searchDomain).toBe('google.co.in');
+        });
+    });
+
+    it('rejects a search domain outside the supported list', async () => {
+      const response = await routes.PATCH(
+        jsonRequest({ searchDomain: 'bing.com' }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(400);
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved?.searchDomain).toBe('google.com');
+    });
+
+    it('refuses a website change that is not acknowledged', async () => {
+      const response = await routes.PATCH(
+        jsonRequest({ domain: 'someone-else.com' }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toMatch(/confirm/i);
+
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved?.domain).toBe('wroffy.com');
+    });
+
+    it('allows the website change once acknowledged, and normalizes it', async () => {
+      const response = await routes.PATCH(
+        jsonRequest(
+          { domain: 'https://WWW.Example.com/pricing', confirmDomainChange: true },
+          'PATCH',
+        ),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(200);
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved?.domain).toBe('example.com');
+    });
+
+    it('does not demand acknowledgement when the website is unchanged', async () => {
+      // The edit dialog always sends the field, so re-saving a different
+      // setting must not be treated as a website change.
+      const response = await routes.PATCH(
+        jsonRequest({ domain: 'https://www.wroffy.com/', name: 'Renamed' }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(200);
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved).toMatchObject({ domain: 'wroffy.com', name: 'Renamed' });
+    });
+
+    it('keeps the ranking history rows that the change invalidates', async () => {
+      // Deleting them would be a side effect the user never asked for; the
+      // dialog warns instead.
+      await routes.PATCH(
+        jsonRequest({ domain: 'example.com', confirmDomainChange: true }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(await prisma.ranking.count({ where: { keyword: { projectId } } })).toBe(3);
+    });
+  });
+
   // ---------- DELETE project ----------
 
   describe('DELETE /api/projects/[id]', () => {

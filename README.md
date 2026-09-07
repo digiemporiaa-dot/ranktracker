@@ -260,6 +260,16 @@ Authenticated with HTTP Basic. The body is an array holding a single task:
 The live endpoint returns results in one response, so no task-polling workflow
 is needed.
 
+`se_domain` comes from the project's **Search on** setting rather than being
+fixed. `location_code` says where the searcher is; `se_domain` says which Google
+answers. They are usually consistent, but not always — google.com and
+google.co.in can return different results for the same India-located query, so
+both are settable. Projects created before this setting existed use
+`google.com`, which is what every check used previously.
+
+The search domain is part of the SERP cache key, so a result fetched from one
+Google is never reused for another.
+
 ### Supported locations
 
 Configured centrally in `src/config/serp.ts`. DataForSEO reuses Google's geo
@@ -459,7 +469,7 @@ user returns `404`, so existence is not disclosed.
 | `GET`    | `/api/projects`                          | List your projects                          |
 | `POST`   | `/api/projects`                          | Create a project                            |
 | `GET`    | `/api/projects/[id]`                     | Project with statistics                     |
-| `PATCH`  | `/api/projects/[id]`                     | Rename, or change country / language / device |
+| `PATCH`  | `/api/projects/[id]`                     | Rename, or change website / country / language / device / search domain |
 | `DELETE` | `/api/projects/[id]`                     | Delete a project and all its data           |
 | `GET`    | `/api/projects/[id]/keywords`            | Paginated keywords                          |
 | `POST`   | `/api/projects/[id]/keywords`            | Add keywords from pasted text               |

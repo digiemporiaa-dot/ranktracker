@@ -50,14 +50,34 @@ describe('updateProjectSchema', () => {
     expect(updateProjectSchema.safeParse({ device: 'desktop' }).success).toBe(false);
   });
 
-  it('does not accept a domain change', () => {
+  // The website used to be stripped from this schema entirely. It is now
+  // editable, but the route refuses the change unless the caller acknowledges
+  // that the existing ranking history was measured for the old domain.
+  it('accepts a website and normalizes it the same way creation does', () => {
     const parsed = updateProjectSchema.safeParse({
-      name: 'Renamed',
-      domain: 'someone-else.com',
+      domain: 'https://WWW.Wroffy.com/pricing?a=1',
+      confirmDomainChange: true,
     });
-    // The key is stripped, so a domain can never reach the update.
-    expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data).not.toHaveProperty('domain');
+
+    expect(parsed.success && parsed.data.domain).toBe('wroffy.com');
+  });
+
+  it('rejects a website that is not a hostname', () => {
+    expect(updateProjectSchema.safeParse({ domain: 'not a domain' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ domain: '' }).success).toBe(false);
+  });
+
+  it('does not treat the confirmation flag on its own as an edit', () => {
+    // Otherwise "confirm and change nothing" would look like a real update.
+    expect(updateProjectSchema.safeParse({ confirmDomainChange: true }).success).toBe(false);
+  });
+
+  it('accepts a supported search domain and rejects anything else', () => {
+    expect(updateProjectSchema.safeParse({ searchDomain: 'google.co.in' }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ searchDomain: 'google.com' }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ searchDomain: 'bing.com' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ searchDomain: 'google.evil.com' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ searchDomain: '' }).success).toBe(false);
   });
 });
 

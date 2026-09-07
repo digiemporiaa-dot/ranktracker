@@ -60,6 +60,9 @@ model Project {
   country   String   @default("IN")
   language  String   @default("en")
   device    Device   @default(DESKTOP)
+  /// Which Google to ask, e.g. "google.co.in". Independent of `country`,
+  /// which controls where the searcher is located.
+  searchDomain String @default("google.com")
   isDemo    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

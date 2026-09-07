@@ -225,6 +225,35 @@ describe('buildSerpTask', () => {
     });
   });
 
+  it('sends the project\u2019s chosen search domain', () => {
+    const task = buildSerpTask({
+      keyword: 'buy business software',
+      domain: 'wroffy.com',
+      country: 'IN',
+      language: 'en',
+      device: 'DESKTOP',
+      results: 100,
+      searchDomain: 'google.co.in',
+    });
+
+    expect(task.se_domain).toBe('google.co.in');
+    // The location is independent of which Google is asked.
+    expect(task.location_code).toBe(2356);
+  });
+
+  it('falls back to google.com when no search domain is set', () => {
+    const task = buildSerpTask({
+      keyword: 'k',
+      domain: 'wroffy.com',
+      country: 'IN',
+      language: 'en',
+      device: 'DESKTOP',
+      results: 10,
+    });
+
+    expect(task.se_domain).toBe('google.com');
+  });
+
   it('maps mobile to a mobile OS', () => {
     const task = buildSerpTask({
       keyword: 'k',

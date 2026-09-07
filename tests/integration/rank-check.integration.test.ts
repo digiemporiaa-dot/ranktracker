@@ -165,7 +165,7 @@ describeIf('rank check pipeline (integration)', () => {
     });
 
     const rankCheckId = await startRankCheck({
-      project: { id: projectId, domain: DOMAIN, userId },
+      project: { id: projectId, domain: DOMAIN, userId, searchDomain: 'google.com' },
       keywords,
       depth: 100,
       requestId: 'integration',
@@ -289,7 +289,7 @@ describeIf('rank check pipeline (integration)', () => {
     });
 
     const rankCheckId = await startRankCheck({
-      project: { id: projectId, domain: DOMAIN, userId },
+      project: { id: projectId, domain: DOMAIN, userId, searchDomain: 'google.com' },
       keywords,
       depth: 100,
       requestId: 'integration-partial',

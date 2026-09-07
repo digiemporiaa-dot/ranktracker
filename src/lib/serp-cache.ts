@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { fetchSerp, type OrganicResult, type RankingLookup } from '@/lib/dataforseo';
+import { DEFAULT_SEARCH_DOMAIN } from '@/config/serp';
 
 /**
  * Short-lived cache in front of DataForSEO.
@@ -15,12 +16,16 @@ import { fetchSerp, type OrganicResult, type RankingLookup } from '@/lib/datafor
  */
 
 export function buildCacheKey(lookup: RankingLookup): string {
+  // The search domain is part of the identity of a SERP: google.com and
+  // google.co.in can answer the same query differently, so a cached result
+  // from one must never be served for the other.
   const parts = [
     lookup.keyword.trim().toLowerCase(),
     lookup.country,
     lookup.language,
     lookup.device,
     String(lookup.results),
+    lookup.searchDomain ?? DEFAULT_SEARCH_DOMAIN,
   ].join('|');
   return createHash('sha256').update(parts).digest('hex');
 }

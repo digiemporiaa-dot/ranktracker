@@ -1,11 +1,40 @@
 import { z } from 'zod';
 
-import { COUNTRY_CODES, LANGUAGE_CODES, MAX_DEPTH } from '@/config/serp';
+import {
+  COUNTRY_CODES,
+  LANGUAGE_CODES,
+  MAX_DEPTH,
+  SEARCH_DOMAIN_VALUES,
+} from '@/config/serp';
 import { normalizeDomain } from '@/lib/domain';
 
 export const countrySchema = z.enum(COUNTRY_CODES as [string, ...string[]]);
 export const languageSchema = z.enum(LANGUAGE_CODES as [string, ...string[]]);
 export const deviceSchema = z.enum(['DESKTOP', 'MOBILE']);
+export const searchDomainSchema = z.enum(SEARCH_DOMAIN_VALUES as [string, ...string[]]);
+
+/**
+ * A website/domain field, reduced to a bare host.
+ *
+ * Shared by project create and project edit so the value is normalized the
+ * same way in both places — a mismatch between the two would mean a project
+ * could never match its own search results.
+ */
+const websiteSchema = z
+  .string()
+  .trim()
+  .min(1, 'Please enter a website')
+  .transform((value, ctx) => {
+    const normalized = normalizeDomain(value);
+    if (!normalized) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Please enter a valid website, for example https://example.com',
+      });
+      return z.NEVER;
+    }
+    return normalized;
+  });
 
 /**
  * A route param or query id.
@@ -36,24 +65,11 @@ export const loginSchema = z.object({
 
 export const createProjectSchema = z.object({
   name: z.string().trim().min(1, 'Please enter a project name').max(120),
-  domain: z
-    .string()
-    .trim()
-    .min(1, 'Please enter a website')
-    .transform((value, ctx) => {
-      const normalized = normalizeDomain(value);
-      if (!normalized) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Please enter a valid website, for example https://example.com',
-        });
-        return z.NEVER;
-      }
-      return normalized;
-    }),
+  domain: websiteSchema,
   country: countrySchema.default('IN'),
   language: languageSchema.default('en'),
   device: deviceSchema.default('DESKTOP'),
+  searchDomain: searchDomainSchema.default('google.com'),
 });
 
 const keywordEntrySchema = z.object({
@@ -80,24 +96,42 @@ export const importKeywordsSchema = z.object({
   commit: z.boolean().default(false),
 });
 
+/** The editable fields, excluding the confirmation flag. */
+const UPDATABLE_PROJECT_FIELDS = [
+  'name',
+  'domain',
+  'country',
+  'language',
+  'device',
+  'searchDomain',
+] as const;
+
 /**
  * Project edit.
  *
- * The domain is deliberately absent. Every Ranking row is a position
- * observation *for a particular domain*; letting the domain change would make
- * the existing history describe two different websites on one chart. A
- * different domain means a new project.
+ * `domain` is editable, but changing it is not a neutral edit: every Ranking
+ * row is a position observation *for a particular domain*, so after a change
+ * the stored history describes two different websites on one chart. The route
+ * therefore refuses a domain change unless `confirmDomainChange` is true, and
+ * the UI shows the warning that flag stands for. The flag is not itself an
+ * edit — a body carrying only the flag is still "nothing to update".
  */
 export const updateProjectSchema = z
   .object({
     name: z.string().trim().min(1, 'Please enter a project name').max(100).optional(),
+    domain: websiteSchema.optional(),
     country: countrySchema.optional(),
     language: languageSchema.optional(),
     device: deviceSchema.optional(),
+    searchDomain: searchDomainSchema.optional(),
+    /** Acknowledgement that changing the website invalidates existing history. */
+    confirmDomainChange: z.boolean().optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: 'There is nothing to update.',
-  });
+  .refine(
+    (value) =>
+      UPDATABLE_PROJECT_FIELDS.some((field) => value[field] !== undefined),
+    { message: 'There is nothing to update.' },
+  );
 
 /** Upper bound on one bulk delete, mirroring the default MAX_KEYWORDS_PER_CHECK. */
 export const MAX_BULK_DELETE = 500;

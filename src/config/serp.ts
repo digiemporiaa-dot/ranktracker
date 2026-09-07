@@ -68,6 +68,56 @@ export function getLanguage(code: string): LanguageConfig {
   return language;
 }
 
+/**
+ * Google search domains ("se_domain" in the DataForSEO request).
+ *
+ * The location code already tells Google where the searcher is; the search
+ * domain decides *which* Google is asked. They are usually consistent, but not
+ * always — google.com and google.co.in can return different result sets for
+ * the same India-located query, so this is worth being able to set.
+ *
+ * `suggestedFor` powers a hint in the UI only. Any country may use any domain:
+ * the two settings are deliberately independent.
+ */
+export type SearchDomain =
+  | 'google.com'
+  | 'google.co.in'
+  | 'google.co.uk'
+  | 'google.ca'
+  | 'google.com.au'
+  | 'google.ae'
+  | 'google.com.sg';
+
+export type SearchDomainConfig = {
+  domain: SearchDomain;
+  label: string;
+  /** Country this domain is the local Google for, when there is one. */
+  suggestedFor?: CountryCode;
+};
+
+export const SEARCH_DOMAINS: SearchDomainConfig[] = [
+  { domain: 'google.com', label: 'google.com (global)' },
+  { domain: 'google.co.in', label: 'google.co.in (India)', suggestedFor: 'IN' },
+  { domain: 'google.co.uk', label: 'google.co.uk (United Kingdom)', suggestedFor: 'GB' },
+  { domain: 'google.ca', label: 'google.ca (Canada)', suggestedFor: 'CA' },
+  { domain: 'google.com.au', label: 'google.com.au (Australia)', suggestedFor: 'AU' },
+  { domain: 'google.ae', label: 'google.ae (United Arab Emirates)', suggestedFor: 'AE' },
+  { domain: 'google.com.sg', label: 'google.com.sg (Singapore)', suggestedFor: 'SG' },
+];
+
+export const SEARCH_DOMAIN_VALUES = SEARCH_DOMAINS.map((entry) => entry.domain);
+
+/**
+ * Existing projects keep this. It is what every check used before the setting
+ * existed, so nothing silently starts measuring something different.
+ */
+export const DEFAULT_SEARCH_DOMAIN: SearchDomain = 'google.com';
+
+/** The local Google for a country, when one is configured. */
+export function suggestedSearchDomain(country: string): SearchDomain | null {
+  return SEARCH_DOMAINS.find((entry) => entry.suggestedFor === country)?.domain ?? null;
+}
+
 /** Device, as stored in Postgres (Prisma enum) and as DataForSEO expects it. */
 export type DeviceCode = 'DESKTOP' | 'MOBILE';
 

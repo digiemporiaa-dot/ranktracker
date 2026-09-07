@@ -79,7 +79,12 @@ export async function POST(request: Request, { params }: Params) {
     const depth = input.depth ?? env.SERP_RESULTS;
 
     const rankCheckId = await startRankCheck({
-      project: { id: project.id, domain: project.domain, userId: project.userId },
+      project: {
+        id: project.id,
+        domain: project.domain,
+        userId: project.userId,
+        searchDomain: project.searchDomain,
+      },
       keywords,
       depth,
       requestId,

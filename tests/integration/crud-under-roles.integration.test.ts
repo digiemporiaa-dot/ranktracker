@@ -150,14 +150,21 @@ describeIf('CRUD under roles (integration)', () => {
       });
     });
 
-    it('never changes the domain', async () => {
-      await projectRoutes.PATCH(
+    // The website is editable now, but not by accident: without the explicit
+    // acknowledgement the route refuses the whole edit. Asserting the 400 as
+    // well as the unchanged value is what makes this prove the guard rather
+    // than merely observing that nothing happened.
+    it('refuses an unacknowledged domain change, and changes nothing', async () => {
+      const response = await projectRoutes.PATCH(
         jsonRequest({ name: 'Renamed', domain: 'hijacked.com' }, 'PATCH'),
         params(projectId),
       );
-      expect((await prisma.project.findUnique({ where: { id: projectId } }))?.domain).toBe(
-        'crud.com',
-      );
+
+      expect(response.status).toBe(400);
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved?.domain).toBe('crud.com');
+      // The rest of the edit is refused with it, rather than half-applied.
+      expect(saved?.name).not.toBe('Renamed');
     });
 
     it('leaves existing keywords on their own locale', async () => {

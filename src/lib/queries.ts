@@ -4,8 +4,10 @@ import { prisma } from '@/lib/db';
 import {
   calculatePositionChange,
   calculateStats,
+  matchesDevice,
   matchesFilter,
   type ChangeKind,
+  type DeviceFilter,
   type RankingFilter,
   type RankingStats,
 } from '@/lib/ranking';
@@ -21,6 +23,9 @@ export type KeywordRow = {
   keyword: string;
   targetUrl: string | null;
   country: string;
+  city: string | null;
+  locationCode: number;
+  googleDomain: string;
   language: string;
   device: string;
   active: boolean;
@@ -43,6 +48,9 @@ export async function getKeywordRows(projectId: string): Promise<KeywordRow[]> {
       k."keyword",
       k."targetUrl",
       k."country",
+      k."city",
+      k."locationCode",
+      k."googleDomain",
       k."language",
       k."device"::text AS "device",
       k."active",
@@ -73,6 +81,7 @@ export async function getKeywordRows(projectId: string): Promise<KeywordRow[]> {
 
   return rows.map((row) => ({
     ...row,
+    locationCode: Number(row.locationCode),
     position: row.position === null ? null : Number(row.position),
     previousPosition: row.previousPosition === null ? null : Number(row.previousPosition),
   }));
@@ -105,11 +114,18 @@ export function applyFilters(
     filter?: RankingFilter;
     sort?: SortField;
     direction?: 'asc' | 'desc';
+    device?: DeviceFilter;
   },
 ): RankingTableRow[] {
-  const { search, filter = 'all', sort = 'position', direction = 'asc' } = options;
+  const {
+    search,
+    filter = 'all',
+    sort = 'position',
+    direction = 'asc',
+    device = 'all',
+  } = options;
 
-  let out = rows;
+  let out = matchesDevice(rows, device);
 
   if (search && search.trim()) {
     const needle = search.trim().toLowerCase();
@@ -148,6 +164,33 @@ export function applyFilters(
   });
 
   return out;
+}
+
+/**
+ * Shape the rows the way the browser table wants them.
+ *
+ * Dates become ISO strings, and the device and location travel with each row —
+ * the table needs both to keep desktop and mobile apart and to say which
+ * location a position was measured in.
+ */
+export function toTableRows(rows: RankingTableRow[]) {
+  return rows.map((row) => ({
+    id: row.id,
+    keyword: row.keyword,
+    targetUrl: row.targetUrl,
+    device: row.device,
+    country: row.country,
+    city: row.city,
+    locationCode: row.locationCode,
+    language: row.language,
+    position: row.position,
+    rankingUrl: row.rankingUrl,
+    checkedAt: row.checkedAt ? row.checkedAt.toISOString() : null,
+    previousPosition: row.previousPosition,
+    changeKind: row.changeKind,
+    changeDelta: row.changeDelta,
+    changeLabel: row.changeLabel,
+  }));
 }
 
 export function paginate<T>(rows: T[], page: number, pageSize: number) {

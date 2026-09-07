@@ -9,7 +9,7 @@ export async function GET(_request: Request, { params }: Params) {
   return route('GET /api/rank-check/[id]', async () => {
     const user = await requireUser();
     const { id } = await params;
-    const rankCheck = await requireRankCheck(user.id, id);
+    const rankCheck = await requireRankCheck(user, id);
 
     const total = rankCheck.totalKeywords || 0;
     const done = rankCheck.completedKeywords + rankCheck.failedKeywords;

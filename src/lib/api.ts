@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import { getCurrentUser, type SessionUser } from '@/lib/auth';
+import { getCurrentUser, isSuperadmin, type SessionUser } from '@/lib/auth';
+import { projectScope, viaProjectScope, type ScopedUser } from '@/lib/scope';
 import { logger, newRequestId } from '@/lib/logger';
 import { DataForSeoError } from '@/lib/dataforseo';
 import { rateLimit } from '@/lib/rate-limit';
@@ -43,13 +44,30 @@ export async function requireUser(): Promise<SessionUser> {
 }
 
 /**
- * Load a project the user actually owns.
+ * Require a signed-in superadmin.
  *
- * Ownership is enforced in the query itself, so one user can never read or
- * write another user's project — a wrong id is indistinguishable from a
- * project that does not exist.
+ * A signed-out caller gets 401, as everywhere else. An authenticated
+ * executive gets 404 rather than 403: the admin surface should not be
+ * discoverable, and a 403 would confirm the route exists.
  */
-export async function requireProject(userId: string, projectId: string) {
+export async function requireSuperadmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!isSuperadmin(user)) throw notFound('page');
+  return user;
+}
+
+/**
+ * Load a project this user is allowed to work on.
+ *
+ * Access is enforced in the query itself, so one executive can never read or
+ * write another's project — a project they do not own matches zero rows and is
+ * indistinguishable from one that does not exist. A superadmin is scoped to
+ * everything.
+ *
+ * This is one of only two places project access is decided; every
+ * project-scoped route reaches the database through here.
+ */
+export async function requireProject(user: ScopedUser, projectId: string) {
   // The route param is validated here rather than in each route: an id that
   // is not even id-shaped cannot match a row, so it is answered like any
   // other unknown id instead of reaching the database.
@@ -57,7 +75,7 @@ export async function requireProject(userId: string, projectId: string) {
   if (!id.success) throw notFound('project');
 
   const project = await prisma.project.findFirst({
-    where: { id: id.data, userId },
+    where: { id: id.data, ...projectScope(user) },
   });
   if (!project) throw notFound('project');
   return project;
@@ -86,12 +104,18 @@ export async function assertNoRunningCheck(projectId: string): Promise<void> {
   }
 }
 
-export async function requireRankCheck(userId: string, rankCheckId: string) {
+/**
+ * Load a ranking check this user is allowed to see.
+ *
+ * The second of the two access chokepoints: a RankCheck has no userId of its
+ * own, so it is scoped through the project it belongs to.
+ */
+export async function requireRankCheck(user: ScopedUser, rankCheckId: string) {
   const id = idParamSchema.safeParse(rankCheckId);
   if (!id.success) throw notFound('ranking check');
 
   const rankCheck = await prisma.rankCheck.findFirst({
-    where: { id: id.data, project: { userId } },
+    where: { id: id.data, ...viaProjectScope(user) },
     include: { project: { select: { id: true, name: true, domain: true } } },
   });
   if (!rankCheck) throw notFound('ranking check');

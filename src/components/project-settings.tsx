@@ -8,7 +8,6 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
@@ -19,25 +18,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  COUNTRIES,
-  COUNTRY_CODES,
-  DEFAULT_SEARCH_DOMAIN,
-  DEVICES,
-  LANGUAGES,
-  LANGUAGE_CODES,
-  SEARCH_DOMAINS,
-  suggestedSearchDomain,
-} from '@/config/serp';
+import { SearchSettings, type SearchSettingsValue } from '@/components/search-settings';
 
 export type EditableProject = {
   id: string;
   name: string;
   domain: string;
   country: string;
+  city: string | null;
   language: string;
-  device: string;
-  searchDomain: string;
+  devices: string[];
+  googleDomain: string;
 };
 
 /** Edit dialog, opened from the project page header. */
@@ -49,18 +40,26 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const initial = {
+  const initial = () => ({
     name: project.name,
     domain: project.domain,
-    country: project.country,
-    language: project.language,
-    device: project.device,
-    searchDomain: project.searchDomain || DEFAULT_SEARCH_DOMAIN,
-  };
+    search: {
+      country: project.country,
+      city: project.city ?? '',
+      language: project.language,
+      devices: [...project.devices],
+      // Shown as an explicit choice: the project already resolved to one.
+      googleDomain: project.googleDomain,
+    } satisfies SearchSettingsValue,
+  });
 
   const [form, setForm] = useState(initial);
   // Acknowledgement that changing the website invalidates existing history.
   const [confirmDomain, setConfirmDomain] = useState(false);
+
+  const sameDevices =
+    form.search.devices.length === project.devices.length &&
+    form.search.devices.every((device) => project.devices.includes(device));
 
   // Compared loosely: the server normalizes "https://WWW.X.com/" to "x.com",
   // so only an obviously different value should trip the warning.
@@ -70,21 +69,19 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
   const changed =
     form.name.trim() !== project.name ||
     domainChanged ||
-    form.country !== project.country ||
-    form.language !== project.language ||
-    form.device !== project.device ||
-    form.searchDomain !== (project.searchDomain || DEFAULT_SEARCH_DOMAIN);
+    form.search.country !== project.country ||
+    form.search.city.trim() !== (project.city ?? '') ||
+    form.search.language !== project.language ||
+    form.search.googleDomain !== project.googleDomain ||
+    !sameDevices;
 
   // A website change is only allowed once the warning has been acknowledged.
   const blocked = domainChanged && !confirmDomain;
 
-  const suggestion = suggestedSearchDomain(form.country);
-  const showSuggestion = suggestion !== null && form.searchDomain !== suggestion;
-
   function reset(nextOpen: boolean) {
     setOpen(nextOpen);
     if (!nextOpen) {
-      setForm(initial);
+      setForm(initial());
       setConfirmDomain(false);
       setError(null);
     }
@@ -93,6 +90,12 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (form.search.devices.length === 0) {
+      setError('Select at least one device to track.');
+      return;
+    }
+
     setPending(true);
 
     try {
@@ -102,10 +105,11 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
         body: JSON.stringify({
           name: form.name.trim(),
           domain: form.domain.trim(),
-          country: form.country,
-          language: form.language,
-          device: form.device,
-          searchDomain: form.searchDomain,
+          country: form.search.country,
+          city: form.search.city.trim() || null,
+          language: form.search.language,
+          devices: form.search.devices,
+          ...(form.search.googleDomain ? { googleDomain: form.search.googleDomain } : {}),
           ...(domainChanged ? { confirmDomainChange: true } : {}),
         }),
       });
@@ -194,92 +198,18 @@ export function EditProjectDialog({ project }: { project: EditableProject }) {
             </div>
           ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-country">Country</Label>
-              <Select
-                id="edit-country"
-                value={form.country}
-                onChange={(event) => setForm({ ...form, country: event.target.value })}
-              >
-                {COUNTRY_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {COUNTRIES[code].label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-language">Language</Label>
-              <Select
-                id="edit-language"
-                value={form.language}
-                onChange={(event) => setForm({ ...form, language: event.target.value })}
-              >
-                {LANGUAGE_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {LANGUAGES[code].label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-device">Device</Label>
-              <Select
-                id="edit-device"
-                value={form.device}
-                onChange={(event) => setForm({ ...form, device: event.target.value })}
-              >
-                {DEVICES.map((device) => (
-                  <option key={device.code} value={device.code}>
-                    {device.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
+          <SearchSettings
+            idPrefix="edit"
+            value={form.search}
+            onChange={(search) => setForm({ ...form, search })}
+            disabled={pending}
+          />
 
           <p className="text-xs text-muted-foreground">
-            Country, language and device apply to keywords you add from now on. Keywords already
-            in this project keep the settings they were added with, and will keep being checked
-            that way.
+            The location, language and devices apply to keywords you add from now on. Keywords
+            already in this project keep the settings they were added with and keep being
+            checked that way, so their history stays comparable.
           </p>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-search-domain">Search on</Label>
-            <Select
-              id="edit-search-domain"
-              value={form.searchDomain}
-              onChange={(event) => setForm({ ...form, searchDomain: event.target.value })}
-            >
-              {SEARCH_DOMAINS.map((entry) => (
-                <option key={entry.domain} value={entry.domain}>
-                  {entry.label}
-                </option>
-              ))}
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Which Google to ask. Unlike the settings above, this applies to every keyword in the
-              project straight away, including ones already added.
-              {showSuggestion ? (
-                <>
-                  {' '}
-                  The local Google for{' '}
-                  {COUNTRIES[form.country as keyof typeof COUNTRIES]?.label ?? form.country} is{' '}
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, searchDomain: suggestion })}
-                    className="font-mono text-primary hover:underline"
-                  >
-                    {suggestion}
-                  </button>
-                  .
-                </>
-              ) : null}
-            </p>
-          </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => reset(false)} disabled={pending}>

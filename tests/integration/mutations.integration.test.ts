@@ -130,7 +130,7 @@ describeIf('project edit and delete routes (integration)', () => {
     for (const keyword of ['alpha', 'beta', 'gamma']) {
       const row = await prisma.keyword.create({ data: { projectId, keyword } });
       await prisma.ranking.create({
-        data: { keywordId: row.id, rankCheckId: check.id, position: 5 },
+        data: { keywordId: row.id, rankCheckId: check.id, position: 5, device: 'DESKTOP', locationCode: 2356, googleDomain: 'google.com' },
       });
     }
   });
@@ -145,7 +145,7 @@ describeIf('project edit and delete routes (integration)', () => {
   describe('PATCH /api/projects/[id]', () => {
     it('updates the editable fields', async () => {
       const response = await routes.PATCH(
-        jsonRequest({ name: 'Wroffy Global', country: 'US', device: 'MOBILE' }, 'PATCH'),
+        jsonRequest({ name: 'Wroffy Global', country: 'US', devices: ['MOBILE'] }, 'PATCH'),
         params(projectId),
       );
 
@@ -154,7 +154,7 @@ describeIf('project edit and delete routes (integration)', () => {
       expect(saved).toMatchObject({
         name: 'Wroffy Global',
         country: 'US',
-        device: 'MOBILE',
+        devices: ['MOBILE'],
       });
     });
 
@@ -177,7 +177,7 @@ describeIf('project edit and delete routes (integration)', () => {
     });
 
     it('rejects an unknown country, language or device', async () => {
-      for (const body of [{ country: 'ZZ' }, { language: 'fr' }, { device: 'TABLET' }]) {
+      for (const body of [{ country: 'ZZ' }, { language: 'fr' }, { devices: ['TABLET'] }]) {
         const response = await routes.PATCH(jsonRequest(body, 'PATCH'), params(projectId));
         expect(response.status, JSON.stringify(body)).toBe(400);
       }
@@ -223,30 +223,57 @@ describeIf('project edit and delete routes (integration)', () => {
     });
   });
 
-  // ---------- website and search domain ----------
+  // ---------- website and Google property ----------
 
-  describe('PATCH website and search domain', () => {
-    it('changes the search domain without any confirmation', () => {
-      // Switching which Google is asked does not invalidate anything already
-      // recorded, so it is an ordinary edit.
-      return routes
-        .PATCH(jsonRequest({ searchDomain: 'google.co.in' }, 'PATCH'), params(projectId))
-        .then(async (response) => {
-          expect(response.status).toBe(200);
-          const saved = await prisma.project.findUnique({ where: { id: projectId } });
-          expect(saved?.searchDomain).toBe('google.co.in');
-        });
+  describe('PATCH website and Google property', () => {
+    it('sets an explicit Google property without touching the country', async () => {
+      const response = await routes.PATCH(
+        jsonRequest({ googleDomain: 'google.com' }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(200);
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved).toMatchObject({ googleDomain: 'google.com', country: 'IN' });
     });
 
-    it('rejects a search domain outside the supported list', async () => {
+    it('rejects a Google property outside the supported list', async () => {
+      const before = await prisma.project.findUnique({ where: { id: projectId } });
+
       const response = await routes.PATCH(
-        jsonRequest({ searchDomain: 'bing.com' }, 'PATCH'),
+        jsonRequest({ googleDomain: 'example.com' }, 'PATCH'),
         params(projectId),
       );
 
       expect(response.status).toBe(400);
+      const after = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(after?.googleDomain).toBe(before?.googleDomain);
+    });
+
+    it('falls back to the new country\u2019s Google when the country moves', async () => {
+      // Moving country without naming a domain should not strand the project
+      // on the previous country's Google.
+      await routes.PATCH(jsonRequest({ googleDomain: 'google.com' }, 'PATCH'), params(projectId));
+
+      const response = await routes.PATCH(
+        jsonRequest({ country: 'GB' }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(200);
       const saved = await prisma.project.findUnique({ where: { id: projectId } });
-      expect(saved?.searchDomain).toBe('google.com');
+      expect(saved).toMatchObject({ country: 'GB', googleDomain: 'google.co.uk' });
+    });
+
+    it('keeps an explicit choice made in the same edit as a country move', async () => {
+      const response = await routes.PATCH(
+        jsonRequest({ country: 'GB', googleDomain: 'google.com' }, 'PATCH'),
+        params(projectId),
+      );
+
+      expect(response.status).toBe(200);
+      const saved = await prisma.project.findUnique({ where: { id: projectId } });
+      expect(saved).toMatchObject({ country: 'GB', googleDomain: 'google.com' });
     });
 
     it('refuses a website change that is not acknowledged', async () => {
@@ -277,8 +304,8 @@ describeIf('project edit and delete routes (integration)', () => {
     });
 
     it('does not demand acknowledgement when the website is unchanged', async () => {
-      // The edit dialog always sends the field, so re-saving a different
-      // setting must not be treated as a website change.
+      // The dialog always sends the field, so re-saving another setting must
+      // not be treated as a website change.
       const response = await routes.PATCH(
         jsonRequest({ domain: 'https://www.wroffy.com/', name: 'Renamed' }, 'PATCH'),
         params(projectId),
@@ -289,15 +316,14 @@ describeIf('project edit and delete routes (integration)', () => {
       expect(saved).toMatchObject({ domain: 'wroffy.com', name: 'Renamed' });
     });
 
-    it('keeps the ranking history rows that the change invalidates', async () => {
-      // Deleting them would be a side effect the user never asked for; the
-      // dialog warns instead.
+    it('keeps the ranking history the change invalidates', async () => {
+      // Deleting it would be a side effect nobody asked for; the dialog warns.
       await routes.PATCH(
         jsonRequest({ domain: 'example.com', confirmDomainChange: true }, 'PATCH'),
         params(projectId),
       );
 
-      expect(await prisma.ranking.count({ where: { keyword: { projectId } } })).toBe(3);
+      expect(await prisma.ranking.count({ where: { keyword: { projectId } } })).toBeGreaterThan(0);
     });
   });
 

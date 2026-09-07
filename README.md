@@ -13,6 +13,7 @@ server. There is no custom SERP API and no provider abstraction layer.
 
 - [Architecture](#architecture)
 - [Features](#features)
+- [Roles](#roles)
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
 - [Environment variables](#environment-variables)
@@ -60,6 +61,7 @@ no `SerpService` and no provider abstraction.
 ## Features
 
 - Email/password accounts with server-side sessions in HTTP-only cookies
+- No public sign-up: accounts are provisioned by an administrator
 - Projects: name, website, country, language, device
 - Keyword entry by CSV upload (with a preview step) or by pasting a list
 - Ranking checks against DataForSEO with bounded concurrency and live progress
@@ -71,6 +73,42 @@ no `SerpService` and no provider abstraction.
 - Filtering, keyword search, and sorting on the ranking table
 - Edit a project; delete keywords singly, in bulk, or all at once, behind confirmation
 - CSV export with spreadsheet formula-injection protection
+
+---
+
+## Roles
+
+| | Executive | Superadmin |
+| --- | --- | --- |
+| Own projects, keywords, checks, export | Yes | Yes |
+| See another user's data | No | Yes |
+| Create and manage accounts | No | Yes |
+
+There is no public sign-up. The first superadmin is created with
+`npm run create-superadmin`; every account after that is provisioned from
+**/admin/users**, which only superadmins can see or reach.
+
+An executive asking for another executive's project — by URL, or by any API
+route — gets `404`, exactly as if it did not exist. Nothing in their interface
+hints that other users' data is there.
+
+A superadmin's project list adds three things an executive never sees: the
+owner of each project, a filter by executive, and totals for the instance
+(projects, keywords, checks currently running). The `?owner=` filter is a
+convenience, not a permission boundary — it is ignored for anyone who is not a
+superadmin, so it can never widen a scope.
+
+**Deactivating beats deleting.** `PATCH { isActive: false }` signs the person
+out immediately, blocks any further sign-in, and leaves their projects and
+ranking history intact. Deleting requires saying what happens to their
+projects: `?onDelete=reassign&toUserId=…` moves them to another account with
+every ranking row preserved, `?onDelete=purge` deletes them and all their data.
+A bare `DELETE` is refused — losing a client's whole ranking history because
+somebody left the company is not an acceptable default.
+
+A superadmin cannot deactivate or delete their own account, and the last active
+superadmin cannot be removed. Roles are not editable over HTTP at all: no
+request body can promote or demote anyone.
 
 ---
 
@@ -111,8 +149,13 @@ npm run seed                # optional: demo user, project and keywords
 npm run dev                 # http://localhost:3000
 ```
 
-Then register an account at `/register`, or sign in with the seeded demo
-account (see [Seed data](#seed-data)).
+Then create your administrator account and sign in at `/login`:
+
+```bash
+npm run create-superadmin -- --email you@example.com --name "Your Name"
+```
+
+Or sign in with the seeded demo account (see [Seed data](#seed-data)).
 
 ### Commands
 
@@ -125,6 +168,7 @@ account (see [Seed data](#seed-data)).
 | `npm test`                   | Unit tests                                            |
 | `npm run test:integration`   | Integration tests (needs a database, see [Testing](#testing)) |
 | `npm run seed`               | Insert demo data                                      |
+| `npm run create-superadmin`  | Create or promote an administrator account            |
 | `npm run prisma:migrate`     | Create and apply a migration in development           |
 | `npm run prisma:deploy`      | Apply committed migrations (production)               |
 | `npm run dataforseo:check`   | Check one keyword against the live API                |
@@ -252,7 +296,7 @@ Authenticated with HTTP Basic. The body is an array holding a single task:
     "device": "desktop",
     "os": "windows",
     "depth": 100,
-    "se_domain": "google.com"
+    "se_domain": "google.co.in"
   }
 ]
 ```
@@ -260,15 +304,18 @@ Authenticated with HTTP Basic. The body is an array holding a single task:
 The live endpoint returns results in one response, so no task-polling workflow
 is needed.
 
-`se_domain` comes from the project's **Search on** setting rather than being
-fixed. `location_code` says where the searcher is; `se_domain` says which Google
-answers. They are usually consistent, but not always — google.com and
-google.co.in can return different results for the same India-located query, so
-both are settable. Projects created before this setting existed use
-`google.com`, which is what every check used previously.
+`location_code` says where the searcher is; `se_domain` says which Google
+answers. A project defaults to its country's local Google, and can be pinned to
+a different one from the **Google** field in its search settings. The two are
+usually consistent, but not always — google.com and google.co.in can return
+different results for the same India-located query, and which one is right
+depends on who the site is trying to reach.
 
-The search domain is part of the SERP cache key, so a result fetched from one
-Google is never reused for another.
+The Google property is part of the SERP cache key, so a result fetched from one
+is never reused for another. Only the properties listed in `GOOGLE_DOMAINS`
+are accepted; anything else is rejected rather than silently ignored. Location
+ids are never taken from a request at all — they are looked up from the country
+and city on the server.
 
 ### Supported locations
 
@@ -448,8 +495,29 @@ curl https://rank.example.com/api/health
 `database: true` means migrations ran and the connection works.
 `serpProviderConfigured: true` means the DataForSEO credentials are present.
 
-Then open `https://rank.example.com/register`, create your account, and run one
-real keyword check to confirm the provider integration end to end.
+### 8. Create your administrator account
+
+There is no public sign-up. Open the **Terminal** for the application in Coolify
+and run:
+
+```bash
+npm run create-superadmin -- --email you@yourdomain.com --name "Your Name"
+```
+
+It asks for a password at a prompt — twice, and never echoed. Minimum 12
+characters. The password is deliberately not an argument and not an environment
+variable: arguments end up in shell history and in the process list, and an
+environment variable would leave a live administrator password sitting in the
+Coolify configuration permanently.
+
+The script refuses to run if the database already has an active superadmin,
+unless you pass `--force`. If an account with that email already exists it
+offers to promote it rather than failing.
+
+Then sign in at `https://rank.example.com/login` and run one real keyword check
+to confirm the provider integration end to end.
+
+Further accounts are created from **/admin/users** once you are signed in.
 
 Redeploys are automatic on push to `main` if you enable Coolify's webhook.
 
@@ -457,19 +525,26 @@ Redeploys are automatic on push to `main` if you enable Coolify's webhook.
 
 ## API routes
 
-All routes require an authenticated session except registration and sign-in.
+There is **no public registration**. The first account is created with
+`npm run create-superadmin`; the rest are provisioned by a superadmin. `/register`
+and `POST /api/auth/register` do not exist and return `404`.
+
+All routes require an authenticated session except sign-in.
 Every project-scoped route verifies ownership; a project belonging to another
 user returns `404`, so existence is not disclosed.
 
 | Method   | Route                                    | Purpose                                     |
 | -------- | ---------------------------------------- | ------------------------------------------- |
-| `POST`   | `/api/auth/register`                     | Create an account and start a session       |
 | `POST`   | `/api/auth/login`                        | Sign in                                     |
 | `POST`   | `/api/auth/logout`                       | Sign out                                    |
+| `GET`    | `/api/admin/users`                       | List all accounts (superadmin)              |
+| `POST`   | `/api/admin/users`                       | Create an executive (superadmin)            |
+| `PATCH`  | `/api/admin/users/[id]`                  | Rename, activate/deactivate, reset password |
+| `DELETE` | `/api/admin/users/[id]`                  | Delete an account (`?onDelete=reassign&toUserId=` or `?onDelete=purge`) |
 | `GET`    | `/api/projects`                          | List your projects                          |
 | `POST`   | `/api/projects`                          | Create a project                            |
 | `GET`    | `/api/projects/[id]`                     | Project with statistics                     |
-| `PATCH`  | `/api/projects/[id]`                     | Rename, or change website / country / language / device / search domain |
+| `PATCH`  | `/api/projects/[id]`                     | Rename, or change website / country / city / language / devices / Google property |
 | `DELETE` | `/api/projects/[id]`                     | Delete a project and all its data           |
 | `GET`    | `/api/projects/[id]/keywords`            | Paginated keywords                          |
 | `POST`   | `/api/projects/[id]/keywords`            | Add keywords from pasted text               |
@@ -483,6 +558,13 @@ user returns `404`, so existence is not disclosed.
 | `GET`    | `/api/projects/[id]/rankings`            | Paginated ranking table                     |
 | `GET`    | `/api/projects/[id]/export`              | CSV export                                  |
 | `GET`    | `/api/health`                            | Health probe                                |
+
+Every project-scoped route — including edit, delete, bulk delete and clear-all
+— goes through the same role-aware ownership check, so a superadmin can run
+them on any project while an executive is confined to their own.
+
+Every `/api/admin/*` route is superadmin-only. An executive receives `404`
+rather than `403`, so the admin surface is not discoverable.
 
 Two rules hold across the destructive routes:
 
@@ -539,6 +621,11 @@ analysis.
 
 - DataForSEO credentials, `DATABASE_URL` and `SESSION_SECRET` are server-side
   only and live in a module marked `server-only`.
+- There is no public sign-up, and no environment flag that could switch one
+  back on — a disabled flag is one misconfigured variable away from open
+  registration on a tool holding client ranking data.
+- Deactivating an account refuses its next request, deletes its sessions, and
+  blocks sign-in.
 - Passwords are hashed with bcrypt (cost 12).
 - The session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
   The database stores an HMAC of the token keyed by `SESSION_SECRET`, so a

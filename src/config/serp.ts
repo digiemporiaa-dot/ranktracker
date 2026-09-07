@@ -15,23 +15,91 @@ export type CountryCode = 'IN' | 'US' | 'GB' | 'CA' | 'AU' | 'AE' | 'SG';
 export type CountryConfig = {
   code: CountryCode;
   label: string;
-  /** DataForSEO `location_code`. */
+  /** DataForSEO `location_code` for the country as a whole. */
   locationCode: number;
   /** DataForSEO `location_name`, sent alongside for traceability in logs. */
   locationName: string;
+  /**
+   * The Google property searched for this country, sent as `se_domain`.
+   *
+   * DataForSEO defaults `se_domain` to whichever Google property matches the
+   * location, so these values agree with the provider's own default rather
+   * than overriding it.
+   */
+  googleDomain: string;
 };
 
 export const COUNTRIES: Record<CountryCode, CountryConfig> = {
-  IN: { code: 'IN', label: 'India', locationCode: 2356, locationName: 'India' },
-  US: { code: 'US', label: 'United States', locationCode: 2840, locationName: 'United States' },
-  GB: { code: 'GB', label: 'United Kingdom', locationCode: 2826, locationName: 'United Kingdom' },
-  CA: { code: 'CA', label: 'Canada', locationCode: 2124, locationName: 'Canada' },
-  AU: { code: 'AU', label: 'Australia', locationCode: 2036, locationName: 'Australia' },
-  AE: { code: 'AE', label: 'United Arab Emirates', locationCode: 2784, locationName: 'United Arab Emirates' },
-  SG: { code: 'SG', label: 'Singapore', locationCode: 2702, locationName: 'Singapore' },
+  IN: {
+    code: 'IN',
+    label: 'India',
+    locationCode: 2356,
+    locationName: 'India',
+    googleDomain: 'google.co.in',
+  },
+  US: {
+    code: 'US',
+    label: 'United States',
+    locationCode: 2840,
+    locationName: 'United States',
+    googleDomain: 'google.com',
+  },
+  GB: {
+    code: 'GB',
+    label: 'United Kingdom',
+    locationCode: 2826,
+    locationName: 'United Kingdom',
+    googleDomain: 'google.co.uk',
+  },
+  CA: {
+    code: 'CA',
+    label: 'Canada',
+    locationCode: 2124,
+    locationName: 'Canada',
+    googleDomain: 'google.ca',
+  },
+  AU: {
+    code: 'AU',
+    label: 'Australia',
+    locationCode: 2036,
+    locationName: 'Australia',
+    googleDomain: 'google.com.au',
+  },
+  AE: {
+    code: 'AE',
+    label: 'United Arab Emirates',
+    locationCode: 2784,
+    locationName: 'United Arab Emirates',
+    googleDomain: 'google.ae',
+  },
+  SG: {
+    code: 'SG',
+    label: 'Singapore',
+    locationCode: 2702,
+    locationName: 'Singapore',
+    googleDomain: 'google.com.sg',
+  },
 };
 
 export const COUNTRY_CODES = Object.keys(COUNTRIES) as CountryCode[];
+
+/**
+ * Google properties a project may be checked against.
+ *
+ * Each country has a local Google, which is what a project uses unless it is
+ * given an explicit one. The override exists because the two are not always
+ * interchangeable: google.com and google.co.in can answer the same
+ * India-located query differently, and which one is "right" depends on who the
+ * site is actually trying to reach.
+ */
+export const GOOGLE_DOMAINS: string[] = Array.from(
+  new Set(['google.com', ...COUNTRY_CODES.map((code) => COUNTRIES[code].googleDomain)]),
+).sort();
+
+/** The local Google for a country. Used as the default, never forced. */
+export function googleDomainFor(country: string): string {
+  return COUNTRIES[country as CountryCode]?.googleDomain ?? 'google.com';
+}
 export const DEFAULT_COUNTRY: CountryCode = 'IN';
 
 export function getCountry(code: string): CountryConfig {
@@ -68,56 +136,6 @@ export function getLanguage(code: string): LanguageConfig {
   return language;
 }
 
-/**
- * Google search domains ("se_domain" in the DataForSEO request).
- *
- * The location code already tells Google where the searcher is; the search
- * domain decides *which* Google is asked. They are usually consistent, but not
- * always — google.com and google.co.in can return different result sets for
- * the same India-located query, so this is worth being able to set.
- *
- * `suggestedFor` powers a hint in the UI only. Any country may use any domain:
- * the two settings are deliberately independent.
- */
-export type SearchDomain =
-  | 'google.com'
-  | 'google.co.in'
-  | 'google.co.uk'
-  | 'google.ca'
-  | 'google.com.au'
-  | 'google.ae'
-  | 'google.com.sg';
-
-export type SearchDomainConfig = {
-  domain: SearchDomain;
-  label: string;
-  /** Country this domain is the local Google for, when there is one. */
-  suggestedFor?: CountryCode;
-};
-
-export const SEARCH_DOMAINS: SearchDomainConfig[] = [
-  { domain: 'google.com', label: 'google.com (global)' },
-  { domain: 'google.co.in', label: 'google.co.in (India)', suggestedFor: 'IN' },
-  { domain: 'google.co.uk', label: 'google.co.uk (United Kingdom)', suggestedFor: 'GB' },
-  { domain: 'google.ca', label: 'google.ca (Canada)', suggestedFor: 'CA' },
-  { domain: 'google.com.au', label: 'google.com.au (Australia)', suggestedFor: 'AU' },
-  { domain: 'google.ae', label: 'google.ae (United Arab Emirates)', suggestedFor: 'AE' },
-  { domain: 'google.com.sg', label: 'google.com.sg (Singapore)', suggestedFor: 'SG' },
-];
-
-export const SEARCH_DOMAIN_VALUES = SEARCH_DOMAINS.map((entry) => entry.domain);
-
-/**
- * Existing projects keep this. It is what every check used before the setting
- * existed, so nothing silently starts measuring something different.
- */
-export const DEFAULT_SEARCH_DOMAIN: SearchDomain = 'google.com';
-
-/** The local Google for a country, when one is configured. */
-export function suggestedSearchDomain(country: string): SearchDomain | null {
-  return SEARCH_DOMAINS.find((entry) => entry.suggestedFor === country)?.domain ?? null;
-}
-
 /** Device, as stored in Postgres (Prisma enum) and as DataForSEO expects it. */
 export type DeviceCode = 'DESKTOP' | 'MOBILE';
 
@@ -126,7 +144,25 @@ export const DEVICES: { code: DeviceCode; label: string; dataForSeo: 'desktop' |
   { code: 'MOBILE', label: 'Mobile', dataForSeo: 'mobile' },
 ];
 
+export const DEVICE_CODES = DEVICES.map((device) => device.code);
+
 export const DEFAULT_DEVICE: DeviceCode = 'DESKTOP';
+
+/** The devices a new project tracks unless the user says otherwise. */
+export const DEFAULT_DEVICES: DeviceCode[] = ['DESKTOP'];
+
+export function deviceLabel(device: string): string {
+  return DEVICES.find((entry) => entry.code === device)?.label ?? device;
+}
+
+/**
+ * The Google property used before per-country domains existed.
+ *
+ * Every keyword created up to that point was checked against google.com
+ * whatever its country, so this is what those rows are backfilled with — the
+ * alternative would be claiming a history came from a domain it never used.
+ */
+export const LEGACY_GOOGLE_DOMAIN = 'google.com';
 
 export function toDataForSeoDevice(device: DeviceCode): 'desktop' | 'mobile' {
   return device === 'MOBILE' ? 'mobile' : 'desktop';

@@ -44,15 +44,17 @@ describe('updateProjectSchema', () => {
   });
 
   it('rejects a device outside the configured list', () => {
-    expect(updateProjectSchema.safeParse({ device: 'DESKTOP' }).success).toBe(true);
-    expect(updateProjectSchema.safeParse({ device: 'MOBILE' }).success).toBe(true);
-    expect(updateProjectSchema.safeParse({ device: 'TABLET' }).success).toBe(false);
-    expect(updateProjectSchema.safeParse({ device: 'desktop' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ devices: ['DESKTOP'] }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ devices: ['MOBILE'] }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ devices: ['DESKTOP', 'MOBILE'] }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ devices: ['TABLET'] }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ devices: ['desktop'] }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ devices: [] }).success).toBe(false);
   });
 
-  // The website used to be stripped from this schema entirely. It is now
-  // editable, but the route refuses the change unless the caller acknowledges
-  // that the existing ranking history was measured for the old domain.
+});
+
+describe('updateProjectSchema: website and Google property', () => {
   it('accepts a website and normalizes it the same way creation does', () => {
     const parsed = updateProjectSchema.safeParse({
       domain: 'https://WWW.Wroffy.com/pricing?a=1',
@@ -72,12 +74,12 @@ describe('updateProjectSchema', () => {
     expect(updateProjectSchema.safeParse({ confirmDomainChange: true }).success).toBe(false);
   });
 
-  it('accepts a supported search domain and rejects anything else', () => {
-    expect(updateProjectSchema.safeParse({ searchDomain: 'google.co.in' }).success).toBe(true);
-    expect(updateProjectSchema.safeParse({ searchDomain: 'google.com' }).success).toBe(true);
-    expect(updateProjectSchema.safeParse({ searchDomain: 'bing.com' }).success).toBe(false);
-    expect(updateProjectSchema.safeParse({ searchDomain: 'google.evil.com' }).success).toBe(false);
-    expect(updateProjectSchema.safeParse({ searchDomain: '' }).success).toBe(false);
+  it('accepts a supported Google property and rejects anything else', () => {
+    expect(updateProjectSchema.safeParse({ googleDomain: 'google.co.in' }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ googleDomain: 'google.com' }).success).toBe(true);
+    expect(updateProjectSchema.safeParse({ googleDomain: 'bing.com' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ googleDomain: 'google.evil.com' }).success).toBe(false);
+    expect(updateProjectSchema.safeParse({ googleDomain: '' }).success).toBe(false);
   });
 });
 

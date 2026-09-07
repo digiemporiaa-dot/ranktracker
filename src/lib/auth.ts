@@ -80,7 +80,22 @@ export async function destroySession(): Promise<void> {
   });
 }
 
-export type SessionUser = Pick<User, 'id' | 'email' | 'name' | 'isDemo'>;
+/**
+ * The signed-in user, as every request sees them.
+ *
+ * `role` is read from the database on each lookup, never from the cookie: the
+ * cookie holds only an opaque token, so a user cannot grant themselves a role
+ * by editing it.
+ */
+export type SessionUser = Pick<
+  User,
+  'id' | 'email' | 'name' | 'isDemo' | 'role' | 'isActive'
+>;
+
+/** True when this user may see and administer everyone's data. */
+export function isSuperadmin(user: Pick<SessionUser, 'role'> | null | undefined): boolean {
+  return user?.role === 'SUPERADMIN';
+}
 
 /** Resolve the signed-in user, or null. Never throws. */
 export async function getCurrentUser(): Promise<SessionUser | null> {
@@ -91,12 +106,34 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 
     const session = await prisma.session.findUnique({
       where: { tokenHash: hashToken(token) },
-      include: { user: { select: { id: true, email: true, name: true, isDemo: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            isDemo: true,
+            role: true,
+            isActive: true,
+          },
+        },
+      },
     });
 
     if (!session) return null;
+
     if (session.expiresAt <= new Date()) {
       await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
+      return null;
+    }
+
+    // A deactivated account is refused on the very next request, even if its
+    // session rows were somehow missed when it was switched off. Clear them
+    // here too, so the rest of that user's sessions die with this one.
+    if (!session.user.isActive) {
+      await prisma.session
+        .deleteMany({ where: { userId: session.user.id } })
+        .catch((error) => logger.warn('session purge failed', { error }));
       return null;
     }
 

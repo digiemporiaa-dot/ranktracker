@@ -3,6 +3,7 @@ import { ListChecks, Plus } from 'lucide-react';
 
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/api';
+import { projectScope } from '@/lib/scope';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { COUNTRIES, type CountryCode } from '@/config/serp';
+import { deviceLabel } from '@/config/serp';
+import { locationLabel } from '@/components/search-summary';
 
 export const metadata = { title: 'Keywords · OurRankTracker' };
 export const dynamic = 'force-dynamic';
@@ -25,7 +27,7 @@ export default async function KeywordsPage() {
   const user = await requireUser();
 
   const projects = await prisma.project.findMany({
-    where: { userId: user.id },
+    where: projectScope(user),
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -39,6 +41,7 @@ export default async function KeywordsPage() {
           keyword: true,
           targetUrl: true,
           country: true,
+          city: true,
           device: true,
           active: true,
         },
@@ -119,7 +122,7 @@ export default async function KeywordsPage() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Keyword</TableHead>
                     <TableHead>Target URL</TableHead>
-                    <TableHead>Country</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Device</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -138,10 +141,10 @@ export default async function KeywordsPage() {
                         {keyword.targetUrl ?? '—'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {COUNTRIES[keyword.country as CountryCode]?.label ?? keyword.country}
+                        {locationLabel(keyword.country, keyword.city)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {keyword.device === 'MOBILE' ? 'Mobile' : 'Desktop'}
+                        {deviceLabel(keyword.device)}
                       </TableCell>
                     </TableRow>
                   ))}

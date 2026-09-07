@@ -33,6 +33,16 @@ export async function POST(request: Request) {
       throw invalid;
     }
 
+    // A deactivated account must not get a session in the first place.
+    // The session lookup rejects them too, but only after one is issued —
+    // refusing here is what actually makes deactivation lock someone out.
+    // The message is the same as a wrong password, so the response cannot be
+    // used to work out which accounts exist and are switched off.
+    if (!user.isActive) {
+      logger.warn('sign-in refused: account deactivated', { requestId, userId: user.id });
+      throw invalid;
+    }
+
     await createSession(user.id);
     logger.info('user signed in', { requestId, userId: user.id });
 

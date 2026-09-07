@@ -16,7 +16,7 @@ export async function GET(request: Request, { params }: Params) {
   return route('GET /api/projects/[id]/rankings', async () => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const url = new URL(request.url);
     const query = listQuerySchema.parse(Object.fromEntries(url.searchParams));

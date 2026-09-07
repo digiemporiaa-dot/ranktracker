@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { getCurrentUser } from '@/lib/auth';
@@ -19,12 +18,9 @@ export default async function LoginPage() {
         <CardDescription>Welcome back. Enter your details to continue.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <AuthForm mode="login" />
+        <AuthForm />
         <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="font-medium text-primary hover:underline">
-            Create one
-          </Link>
+          Accounts are created by an administrator.
         </p>
       </CardContent>
     </Card>

@@ -2,23 +2,82 @@ import { z } from 'zod';
 
 import {
   COUNTRY_CODES,
+  GOOGLE_DOMAINS,
   LANGUAGE_CODES,
   MAX_DEPTH,
-  SEARCH_DOMAIN_VALUES,
+  type CountryCode,
+  type LanguageCode,
 } from '@/config/serp';
 import { normalizeDomain } from '@/lib/domain';
 
-export const countrySchema = z.enum(COUNTRY_CODES as [string, ...string[]]);
-export const languageSchema = z.enum(LANGUAGE_CODES as [string, ...string[]]);
+// Typed as tuples so the parsed value keeps its literal type: a validated
+// country is a CountryCode, not any string, and the routes that pass it on to
+// the location resolver do not need a cast.
+export const countrySchema = z.enum(COUNTRY_CODES as [CountryCode, ...CountryCode[]]);
+export const languageSchema = z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]);
 export const deviceSchema = z.enum(['DESKTOP', 'MOBILE']);
-export const searchDomainSchema = z.enum(SEARCH_DOMAIN_VALUES as [string, ...string[]]);
 
 /**
- * A website/domain field, reduced to a bare host.
+ * A city, by name.
  *
- * Shared by project create and project edit so the value is normalized the
- * same way in both places — a mismatch between the two would mean a project
- * could never match its own search results.
+ * Optional everywhere: an absent or empty city means the whole country is
+ * searched. The name is turned into a DataForSEO location id on the server —
+ * there is deliberately no field for a caller to send an id of its own.
+ */
+export const citySchema = z
+  .string()
+  .trim()
+  .max(120, 'That city name is too long.')
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable();
+
+/**
+ * The devices to track. At least one, and each one only once.
+ *
+ * Every selected device is checked with its own SERP request and kept as its
+ * own ranking history, so this is a list rather than a single value.
+ */
+export const devicesSchema = z
+  .array(deviceSchema)
+  .min(1, 'Select at least one device.')
+  .max(2)
+  .transform((devices) => [...new Set(devices)]);
+
+/**
+ * A route param or query id.
+ *
+ * Ids are cuids. Bounding the shape here keeps a hostile or malformed id from
+ * reaching a query at all; a value that fails this is answered exactly like an
+ * id that simply does not exist.
+ */
+export const idParamSchema = z.string().trim().min(1).max(60);
+
+export const deleteKeywordQuerySchema = z.object({
+  keywordId: idParamSchema,
+});
+
+export const createUserSchema = z.object({
+  name: z.string().trim().min(1, 'Please enter your name').max(100),
+  email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(255),
+  password: z
+    .string()
+    .min(10, 'Password must be at least 10 characters')
+    .max(200, 'Password is too long'),
+});
+
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(255),
+  password: z.string().min(1, 'Please enter your password').max(200),
+});
+
+export const googleDomainSchema = z.enum(GOOGLE_DOMAINS as [string, ...string[]]);
+
+/**
+ * A website, reduced to a bare host.
+ *
+ * Shared by project create and project edit so both normalize identically — a
+ * difference between the two would mean a project could stop matching its own
+ * search results.
  */
 const websiteSchema = z
   .string()
@@ -36,40 +95,17 @@ const websiteSchema = z
     return normalized;
   });
 
-/**
- * A route param or query id.
- *
- * Ids are cuids. Bounding the shape here keeps a hostile or malformed id from
- * reaching a query at all; a value that fails this is answered exactly like an
- * id that simply does not exist.
- */
-export const idParamSchema = z.string().trim().min(1).max(60);
-
-export const deleteKeywordQuerySchema = z.object({
-  keywordId: idParamSchema,
-});
-
-export const registerSchema = z.object({
-  name: z.string().trim().min(1, 'Please enter your name').max(100),
-  email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(255),
-  password: z
-    .string()
-    .min(10, 'Password must be at least 10 characters')
-    .max(200, 'Password is too long'),
-});
-
-export const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(255),
-  password: z.string().min(1, 'Please enter your password').max(200),
-});
-
 export const createProjectSchema = z.object({
   name: z.string().trim().min(1, 'Please enter a project name').max(120),
   domain: websiteSchema,
-  country: countrySchema.default('IN'),
+  // Required: a rank check has to happen somewhere, and there is no sensible
+  // country to assume on someone else's behalf.
+  country: countrySchema,
+  city: citySchema.optional(),
   language: languageSchema.default('en'),
-  device: deviceSchema.default('DESKTOP'),
-  searchDomain: searchDomainSchema.default('google.com'),
+  devices: devicesSchema.default(['DESKTOP']),
+  /** Omit to use the country's local Google. */
+  googleDomain: googleDomainSchema.optional(),
 });
 
 const keywordEntrySchema = z.object({
@@ -83,55 +119,63 @@ export const addKeywordsSchema = z.object({
   /** Pre-parsed rows, used by the CSV import preview. */
   keywords: z.array(keywordEntrySchema).max(5000).optional(),
   country: countrySchema.optional(),
+  city: citySchema.optional(),
   language: languageSchema.optional(),
-  device: deviceSchema.optional(),
+  devices: devicesSchema.optional(),
 });
 
 export const importKeywordsSchema = z.object({
   csv: z.string().min(1, 'The file is empty').max(4_000_000),
   country: countrySchema.optional(),
+  city: citySchema.optional(),
   language: languageSchema.optional(),
-  device: deviceSchema.optional(),
+  devices: devicesSchema.optional(),
   /** When false, the server parses and returns a preview without saving. */
   commit: z.boolean().default(false),
 });
 
+/**
+ * Project edit.
+ *
+ * The domain is deliberately absent. Every Ranking row is a position
+ * observation *for a particular domain*; letting the domain change would make
+ * the existing history describe two different websites on one chart. A
+ * different domain means a new project.
+ */
 /** The editable fields, excluding the confirmation flag. */
 const UPDATABLE_PROJECT_FIELDS = [
   'name',
   'domain',
   'country',
+  'city',
   'language',
-  'device',
-  'searchDomain',
+  'devices',
+  'googleDomain',
 ] as const;
 
-/**
- * Project edit.
- *
- * `domain` is editable, but changing it is not a neutral edit: every Ranking
- * row is a position observation *for a particular domain*, so after a change
- * the stored history describes two different websites on one chart. The route
- * therefore refuses a domain change unless `confirmDomainChange` is true, and
- * the UI shows the warning that flag stands for. The flag is not itself an
- * edit — a body carrying only the flag is still "nothing to update".
- */
 export const updateProjectSchema = z
   .object({
     name: z.string().trim().min(1, 'Please enter a project name').max(100).optional(),
+    /**
+     * Editable, but not a neutral edit: every Ranking row is a position
+     * observation for a particular website, so after a change the stored
+     * history describes two different sites. The route refuses the change
+     * unless `confirmDomainChange` is true.
+     */
     domain: websiteSchema.optional(),
     country: countrySchema.optional(),
+    /** Explicit null clears the city and goes back to country-level tracking. */
+    city: citySchema.optional(),
     language: languageSchema.optional(),
-    device: deviceSchema.optional(),
-    searchDomain: searchDomainSchema.optional(),
+    devices: devicesSchema.optional(),
+    /** Overrides the country's local Google for this project. */
+    googleDomain: googleDomainSchema.optional(),
     /** Acknowledgement that changing the website invalidates existing history. */
     confirmDomainChange: z.boolean().optional(),
   })
-  .refine(
-    (value) =>
-      UPDATABLE_PROJECT_FIELDS.some((field) => value[field] !== undefined),
-    { message: 'There is nothing to update.' },
-  );
+  .refine((value) => UPDATABLE_PROJECT_FIELDS.some((field) => value[field] !== undefined), {
+    message: 'There is nothing to update.',
+  });
 
 /** Upper bound on one bulk delete, mirroring the default MAX_KEYWORDS_PER_CHECK. */
 export const MAX_BULK_DELETE = 500;
@@ -154,6 +198,40 @@ export const rankCheckSchema = z.object({
   keywordIds: z.array(z.string().min(1)).max(5000).optional(),
 });
 
+/**
+ * Admin edits to a user.
+ *
+ * There is deliberately no `role` field: role changes are not an HTTP
+ * operation at all, so no request body can promote or demote anyone.
+ */
+export const updateUserSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Please enter a name').max(100).optional(),
+    isActive: z.boolean().optional(),
+    password: z
+      .string()
+      .min(10, 'Password must be at least 10 characters')
+      .max(200)
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'There is nothing to update.',
+  });
+
+/**
+ * Deleting a user must say what happens to their projects.
+ *
+ * There is no default: silently destroying a client's whole ranking history
+ * because somebody left the company is not an acceptable fallback.
+ */
+export const deleteUserQuerySchema = z.discriminatedUnion('onDelete', [
+  z.object({
+    onDelete: z.literal('reassign'),
+    toUserId: z.string().min(1, 'Choose who receives the projects.'),
+  }),
+  z.object({ onDelete: z.literal('purge') }),
+]);
+
 export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
@@ -173,10 +251,19 @@ export const listQuerySchema = z.object({
     .default('all'),
   sort: z.enum(['keyword', 'position', 'change', 'checkedAt']).default('position'),
   direction: z.enum(['asc', 'desc']).default('asc'),
+  /** Show one device's rankings, or both side by side. */
+  device: z.enum(['all', 'DESKTOP', 'MOBILE']).default('all'),
 });
 
-export type RegisterInput = z.infer<typeof registerSchema>;
+/** Query for the city picker. The country decides which cities are offered. */
+export const cityQuerySchema = z.object({
+  country: countrySchema,
+  search: z.string().trim().max(120).optional(),
+});
+
+export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
+export type CityQuery = z.infer<typeof cityQuerySchema>;

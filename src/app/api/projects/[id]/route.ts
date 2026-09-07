@@ -13,6 +13,8 @@ import {
   route,
 } from '@/lib/api';
 import { updateProjectSchema } from '@/lib/validation';
+import { resolveLocation } from '@/lib/locations';
+import type { CountryCode } from '@/config/serp';
 import { getKeywordRows, summarize } from '@/lib/queries';
 import { logger } from '@/lib/logger';
 
@@ -22,7 +24,7 @@ export async function GET(_request: Request, { params }: Params) {
   return route('GET /api/projects/[id]', async () => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const rows = await getKeywordRows(project.id);
     const { stats, lastCheckedAt } = summarize(rows);
@@ -39,29 +41,63 @@ export async function GET(_request: Request, { params }: Params) {
 /**
  * Edit a project.
  *
- * Changing `domain` is allowed but guarded. Every Ranking row records a
- * position *for a particular domain*, so after a change the stored history
- * describes two different websites. The caller must acknowledge that with
- * `confirmDomainChange`; the check lives here and not only in the dialog, so
- * skipping the UI cannot skip the warning.
+ * `domain` is not editable. Every Ranking row records a position *for a
+ * particular domain*, so changing it would leave one project's history
+ * describing two different websites. A different domain means a new project.
  *
- * Changing country / language / device only changes the defaults applied to
- * keywords added afterwards. Existing Keyword rows keep their own values,
- * because (projectId, keyword, country, language, device) is the keyword's
- * identity. `searchDomain` is project-wide and applies to every check.
+ * Changing the location, language or devices only changes the defaults applied
+ * to keywords added afterwards. Existing Keyword rows keep their own values,
+ * because (projectId, keyword, locationCode, language, device) is the
+ * keyword's identity — rewriting them would silently re-label history that was
+ * measured somewhere else.
  */
 export async function PATCH(request: Request, { params }: Params) {
   return route('PATCH /api/projects/[id]', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     limitProjectEdit(user.id);
 
     const input = await parseBody(request, updateProjectSchema);
 
-    // Only a *real* change of website needs the acknowledgement — re-sending
-    // the domain the project already has is not a change.
+    // Country and city are resolved together: a city only means anything
+    // inside a country. Moving the project to a different country without
+    // naming a new city drops back to country-level rather than carrying a
+    // city that does not exist there.
+    // The Google property rides along: changing it alone still goes through
+    // the resolver, so there is one place that decides what a project searches.
+    const locationChanged =
+      input.country !== undefined ||
+      input.city !== undefined ||
+      input.googleDomain !== undefined;
+
+    const location = locationChanged
+      ? await resolveLocation(
+          {
+            country: input.country ?? (project.country as CountryCode),
+            city:
+              input.city !== undefined
+                ? input.city
+                : input.country !== undefined
+                  ? null
+                  : project.city,
+            // An explicit choice is kept when the country is untouched; moving
+            // the project to a new country falls back to that country's Google
+            // unless a domain is named in the same edit.
+            googleDomain:
+              input.googleDomain ?? (input.country !== undefined ? null : project.googleDomain),
+          },
+          requestId,
+          // What the project already resolved to. An edit that leaves the
+          // location alone reuses it instead of asking the provider again.
+          { country: project.country, city: project.city, locationCode: project.locationCode },
+        )
+      : null;
+
+    // Only a real change of website needs the acknowledgement — re-sending the
+    // domain the project already has is not a change. Checked here as well as
+    // in the dialog, so skipping the UI cannot skip the warning.
     const domainChanged = input.domain !== undefined && input.domain !== project.domain;
     if (domainChanged && input.confirmDomainChange !== true) {
       throw new ApiError(
@@ -76,10 +112,16 @@ export async function PATCH(request: Request, { params }: Params) {
         data: {
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(domainChanged ? { domain: input.domain } : {}),
-          ...(input.country !== undefined ? { country: input.country } : {}),
+          ...(location
+            ? {
+                country: location.country,
+                city: location.city,
+                locationCode: location.locationCode,
+                googleDomain: location.googleDomain,
+              }
+            : {}),
           ...(input.language !== undefined ? { language: input.language } : {}),
-          ...(input.device !== undefined ? { device: input.device } : {}),
-          ...(input.searchDomain !== undefined ? { searchDomain: input.searchDomain } : {}),
+          ...(input.devices !== undefined ? { devices: input.devices } : {}),
         },
       });
 
@@ -116,7 +158,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   return route('DELETE /api/projects/[id]', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     limitDestructive(user.id);
 

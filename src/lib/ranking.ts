@@ -152,3 +152,92 @@ export function matchesFilter(
       return true;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Devices
+ *
+ * Desktop and mobile are tracked as separate keyword rows with separate
+ * histories. Nothing below ever averages, merges or falls back between them —
+ * a keyword with no mobile row shows no mobile position, rather than borrowing
+ * the desktop one.
+ * ---------------------------------------------------------------------- */
+
+export type DeviceFilter = 'all' | 'DESKTOP' | 'MOBILE';
+
+export const DEVICE_FILTERS: { value: DeviceFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'DESKTOP', label: 'Desktop' },
+  { value: 'MOBILE', label: 'Mobile' },
+];
+
+export function isDeviceFilter(value: string): value is DeviceFilter {
+  return value === 'all' || value === 'DESKTOP' || value === 'MOBILE';
+}
+
+/** Narrow a list of per-device rows to one device. 'all' keeps everything. */
+export function matchesDevice<T extends { device: string }>(
+  rows: T[],
+  device: DeviceFilter,
+): T[] {
+  if (device === 'all') return rows;
+  return rows.filter((row) => row.device === device);
+}
+
+/** What identifies one line of the desktop-and-mobile table. */
+type Groupable = {
+  id: string;
+  keyword: string;
+  locationCode: number;
+  language: string;
+  device: string;
+};
+
+export type DeviceGroup<T extends Groupable> = {
+  /** Stable across renders; not a database id. */
+  key: string;
+  keyword: string;
+  locationCode: number;
+  language: string;
+  desktop: T | null;
+  mobile: T | null;
+  /** The rows behind this line — one per device actually tracked. */
+  keywordIds: string[];
+};
+
+/**
+ * Pivot per-device rows into one line per keyword, so desktop and mobile sit
+ * side by side.
+ *
+ * Rows are grouped by keyword *and location*: the same words tracked in Delhi
+ * and nationwide are two different measurements and stay two different lines.
+ * Order follows the first appearance of each group, which keeps whatever
+ * ordering the caller already applied.
+ */
+export function groupByDevice<T extends Groupable>(rows: T[]): DeviceGroup<T>[] {
+  const groups = new Map<string, DeviceGroup<T>>();
+
+  for (const row of rows) {
+    const key = `${row.locationCode}|${row.language}|${row.keyword}`;
+
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        keyword: row.keyword,
+        locationCode: row.locationCode,
+        language: row.language,
+        desktop: null,
+        mobile: null,
+        keywordIds: [],
+      };
+      groups.set(key, group);
+    }
+
+    if (row.device === 'MOBILE') group.mobile = row;
+    else group.desktop = row;
+
+    group.keywordIds.push(row.id);
+  }
+
+  return [...groups.values()];
+}

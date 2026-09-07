@@ -20,7 +20,7 @@ export async function GET(request: Request, { params }: Params) {
   return route('GET /api/projects/[id]/export', async ({ requestId }) => {
     const user = await requireUser();
     const { id } = await params;
-    const project = await requireProject(user.id, id);
+    const project = await requireProject(user, id);
 
     const url = new URL(request.url);
     const query = listQuerySchema.parse({
@@ -35,13 +35,31 @@ export async function GET(request: Request, { params }: Params) {
       filter: query.filter,
       sort: query.sort,
       direction: query.direction,
+      device: query.device,
     });
 
     // Every cell goes through toCsv, which escapes and de-fangs formulas.
+    // Device and location are columns of their own: a row of positions is not
+    // interpretable without knowing which device and place it was measured on.
     const csv = toCsv(
-      ['keyword', 'position', 'change', 'target_url', 'ranking_url', 'checked_at'],
+      [
+        'keyword',
+        'device',
+        'country',
+        'city',
+        'google_domain',
+        'position',
+        'change',
+        'target_url',
+        'ranking_url',
+        'checked_at',
+      ],
       rows.map((row) => [
         row.keyword,
+        row.device,
+        row.country,
+        row.city ?? '',
+        row.googleDomain,
         row.position ?? 'Not Found',
         row.changeDelta ?? (row.changeKind === 'none' ? '' : row.changeLabel),
         row.targetUrl ?? '',

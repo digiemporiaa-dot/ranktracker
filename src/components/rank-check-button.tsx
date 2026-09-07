@@ -7,7 +7,8 @@ import { Loader2, Play } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { COUNTRIES, LANGUAGES, type CountryCode, type LanguageCode } from '@/config/serp';
+import { LANGUAGES, deviceLabel, type LanguageCode } from '@/config/serp';
+import { locationLabel } from '@/components/search-summary';
 
 type CheckStatus = {
   id: string;
@@ -31,16 +32,20 @@ export function RankCheckButton({
   projectId,
   keywordCount,
   country,
+  city,
+  googleDomain,
   language,
-  device,
+  devices,
   depth,
   activeCheckId,
 }: {
   projectId: string;
   keywordCount: number;
   country: string;
+  city: string | null;
+  googleDomain: string;
   language: string;
-  device: string;
+  devices: string[];
   depth: number;
   activeCheckId?: string | null;
 }) {
@@ -134,7 +139,6 @@ export function RankCheckButton({
   }
 
   if (confirming) {
-    const countryLabel = COUNTRIES[country as CountryCode]?.label ?? country;
     const languageLabel = LANGUAGES[language as LanguageCode]?.label ?? language;
 
     return (
@@ -143,18 +147,28 @@ export function RankCheckButton({
           <p className="font-medium">
             {keywordCount} keyword{keywordCount === 1 ? '' : 's'}
           </p>
+          <p className="text-xs text-muted-foreground">
+            Each keyword is checked with the location and device it was added with — the
+            settings below are this project&apos;s current defaults.
+          </p>
           <dl className="space-y-0.5 text-muted-foreground">
+            <div className="flex justify-between gap-3">
+              <dt>Location</dt>
+              <dd className="text-right text-foreground">{locationLabel(country, city)}</dd>
+            </div>
             <div className="flex justify-between">
-              <dt>Country</dt>
-              <dd className="text-foreground">{countryLabel}</dd>
+              <dt>Google</dt>
+              <dd className="text-foreground">{googleDomain}</dd>
             </div>
             <div className="flex justify-between">
               <dt>Language</dt>
               <dd className="text-foreground">{languageLabel}</dd>
             </div>
             <div className="flex justify-between">
-              <dt>Device</dt>
-              <dd className="text-foreground">{device === 'MOBILE' ? 'Mobile' : 'Desktop'}</dd>
+              <dt>Devices</dt>
+              <dd className="text-foreground">
+                {devices.map((entry) => deviceLabel(entry)).join(' + ')}
+              </dd>
             </div>
             <div className="flex justify-between">
               <dt>Results</dt>

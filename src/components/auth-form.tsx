@@ -9,7 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
+/**
+ * The sign-in form.
+ *
+ * There is no sign-up counterpart: accounts are provisioned by a superadmin
+ * from /admin/users, or by the create-superadmin CLI for the first one.
+ */
+export function AuthForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -23,7 +29,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     const payload = Object.fromEntries(formData) as Record<string, string>;
 
     try {
-      const response = await fetch(`/api/auth/${mode}`, {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -49,13 +55,6 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     <form onSubmit={onSubmit} className="space-y-4">
       {error ? <Alert tone="error">{error}</Alert> : null}
 
-      {mode === 'register' ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="name">Name</Label>
-          <Input id="name" name="name" autoComplete="name" required maxLength={100} />
-        </div>
-      ) : null}
-
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input id="email" name="email" type="email" autoComplete="email" required />
@@ -67,18 +66,15 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
           id="password"
           name="password"
           type="password"
-          autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+          autoComplete="current-password"
           required
-          minLength={mode === 'register' ? 10 : 1}
+          minLength={1}
         />
-        {mode === 'register' ? (
-          <p className="text-xs text-muted-foreground">At least 10 characters.</p>
-        ) : null}
       </div>
 
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {mode === 'login' ? 'Sign in' : 'Create account'}
+        Sign in
       </Button>
     </form>
   );

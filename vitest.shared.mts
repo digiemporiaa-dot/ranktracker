@@ -20,6 +20,7 @@ export const baseTestConfig: UserConfig = {
       MAX_KEYWORDS_PER_CHECK: '500',
       SERP_RESULTS: '100',
       SERP_CACHE_MINUTES: '30',
+      SERP_EMPTY_RETRIES: '3',
     },
   },
   resolve: {

@@ -117,11 +117,12 @@ describe('DataForSEO transport', () => {
     );
 
     await vi.runAllTimersAsync();
-    const organic = await promise;
+    const outcome = await promise;
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(organic).toHaveLength(1);
-    expect(organic[0].position).toBe(1);
+    expect(outcome.status).toBe('OK');
+    expect(outcome.organic).toHaveLength(1);
+    expect(outcome.organic[0].position).toBe(1);
   });
 
   it('gives up after 3 attempts on a persistent transient failure', async () => {

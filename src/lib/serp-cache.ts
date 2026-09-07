@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { fetchSerp, type OrganicResult, type RankingLookup } from '@/lib/dataforseo';
+import { fetchSerp, type OrganicResult, type RankingLookup, type SerpFetchOutcome } from '@/lib/dataforseo';
 
 /**
  * Short-lived cache in front of DataForSEO.
@@ -33,14 +33,22 @@ export function buildCacheKey(lookup: RankingLookup): string {
   return `serp:${createHash('sha256').update(parts).digest('hex')}`;
 }
 
+/**
+ * A SERP for this lookup, from the cache when there is a fresh one.
+ *
+ * Only a SERP that was actually read is cached. An unavailable response is
+ * never stored: caching it would turn one 40102 into half an hour of them, and
+ * every keyword sharing the cache key would inherit a failure that has nothing
+ * to do with it. A cache hit is always an OK outcome by construction.
+ */
 export async function fetchSerpCached(
   lookup: RankingLookup,
   requestId: string,
-): Promise<{ organic: OrganicResult[]; cached: boolean }> {
+): Promise<{ outcome: SerpFetchOutcome; cached: boolean }> {
   const ttlMinutes = env.SERP_CACHE_MINUTES;
 
   if (ttlMinutes <= 0) {
-    return { organic: await fetchSerp(lookup, requestId), cached: false };
+    return { outcome: await fetchSerp(lookup, requestId), cached: false };
   }
 
   const cacheKey = buildCacheKey(lookup);
@@ -49,27 +57,40 @@ export async function fetchSerpCached(
     const hit = await prisma.serpCache.findUnique({ where: { cacheKey } });
     if (hit && hit.expiresAt > new Date()) {
       logger.debug('serp cache hit', { requestId, cacheKey });
-      return { organic: hit.payload as unknown as OrganicResult[], cached: true };
+      const organic = hit.payload as unknown as OrganicResult[];
+      return {
+        outcome: {
+          status: 'OK',
+          organic: Array.isArray(organic) ? organic : [],
+          apiStatusCode: null,
+          apiStatusMessage: null,
+          attempts: 0,
+        },
+        cached: true,
+      };
     }
   } catch (error) {
     // A cache read failure must never fail a ranking check.
     logger.warn('serp cache read failed', { requestId, error });
   }
 
-  const organic = await fetchSerp(lookup, requestId);
+  const outcome = await fetchSerp(lookup, requestId);
+
+  if (outcome.status !== 'OK') return { outcome, cached: false };
+
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
 
   try {
     await prisma.serpCache.upsert({
       where: { cacheKey },
-      create: { cacheKey, payload: organic as unknown as object, expiresAt },
-      update: { payload: organic as unknown as object, expiresAt },
+      create: { cacheKey, payload: outcome.organic as unknown as object, expiresAt },
+      update: { payload: outcome.organic as unknown as object, expiresAt },
     });
   } catch (error) {
     logger.warn('serp cache write failed', { requestId, error });
   }
 
-  return { organic, cached: false };
+  return { outcome, cached: false };
 }
 
 /** Drop expired rows. Called opportunistically at the start of a rank check. */

@@ -53,6 +53,9 @@ export type RankingRow = {
   rankingUrl: string | null;
   checkedAt: string | null;
   previousPosition: number | null;
+  /** Outcome of the most recent attempt, which may be later than checkedAt. */
+  serpStatus?: string | null;
+  lastAttemptAt?: string | null;
   changeKind: ChangeKind;
   changeDelta: number | null;
   changeLabel: string;
@@ -344,7 +347,7 @@ export function RankingsTable({
     row ? (
       <>
         <TableCell>
-          <PositionCell position={row.position} />
+          <PositionCell position={row.position} serpStatus={row.serpStatus} />
         </TableCell>
         <TableCell>
           <ChangeCell kind={row.changeKind} label={row.changeLabel} />
@@ -543,7 +546,10 @@ export function RankingsTable({
                     ) : (
                       <>
                         <TableCell>
-                          <PositionCell position={line.single?.position ?? null} />
+                          <PositionCell
+                            position={line.single?.position ?? null}
+                            serpStatus={line.single?.serpStatus}
+                          />
                         </TableCell>
                         <TableCell>
                           <ChangeCell

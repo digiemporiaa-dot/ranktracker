@@ -11,6 +11,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { calculatePositionChange } from '@/lib/ranking';
+
 const INTEGRATION_URL = process.env.INTEGRATION_DATABASE_URL;
 const describeIf = INTEGRATION_URL ? describe : describe.skip;
 
@@ -112,6 +114,9 @@ describeIf('rank check pipeline (integration)', () => {
     // Caching off, so both checks really call the provider.
     process.env.SERP_CACHE_MINUTES = '0';
     process.env.SERP_CONCURRENCY = '3';
+    // One retry, so the empty-SERP path is exercised without the suite sitting
+    // through the full 2s/5s/10s schedule. The schedule itself is unit-tested.
+    process.env.SERP_EMPTY_RETRIES = '1';
 
     vi.resetModules();
     const { PrismaClient } = await import('@prisma/client');
@@ -355,5 +360,140 @@ describeIf('rank check pipeline (integration)', () => {
         if (first) expect(first).not.toMatch(/[=+@]/);
       }
     }
+  });
+
+  /**
+   * The accuracy requirement, end to end: a keyword ranking #7 whose next
+   * check comes back 40102 must still read #7, with the failure reported
+   * beside it. Rank 0 and "Not Ranking" are both wrong answers here.
+   */
+  it('does not let a 40102 overwrite the last measured ranking', async () => {
+    const { getKeywordRows } = await import('@/lib/queries');
+    const { startRankCheck } = await import('@/lib/rank-check');
+
+    const keyword = await prisma.keyword.create({
+      data: {
+        projectId,
+        keyword: 'serp unavailable probe',
+        country: 'IN',
+        language: 'en',
+        device: 'DESKTOP',
+      },
+    });
+
+    const runOne = async (requestId: string) => {
+      const rankCheckId = await startRankCheck({
+        project: { id: projectId, domain: DOMAIN, userId },
+        keywords: [
+          {
+            id: keyword.id,
+            keyword: keyword.keyword,
+            targetUrl: null,
+            country: keyword.country,
+            city: keyword.city,
+            locationCode: keyword.locationCode,
+            googleDomain: keyword.googleDomain,
+            language: keyword.language,
+            device: keyword.device,
+          },
+        ],
+        depth: 50,
+        requestId,
+      });
+
+      for (let i = 0; i < 200; i += 1) {
+        const check = await prisma.rankCheck.findUnique({ where: { id: rankCheckId } });
+        if (check && ['COMPLETED', 'PARTIAL', 'FAILED'].includes(check.status)) return check;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error('rank check did not finish in time');
+    };
+
+    // 1. A good check puts the domain at #7.
+    stubDataForSeo({
+      'serp unavailable probe': [
+        ...Array.from({ length: 6 }, (_, i) => `https://rival-${i}.com/x`),
+        'https://www.wroffy.com/probe',
+      ],
+    });
+    const first = await runOne('integration-serp-ok');
+    expect(first.status).toBe('COMPLETED');
+
+    const afterFirst = (await getKeywordRows(projectId)).find((r) => r.id === keyword.id)!;
+    expect(afterFirst.position).toBe(7);
+    expect(afterFirst.serpStatus).toBe('RANKED');
+
+    const successAt = (await prisma.keyword.findUnique({ where: { id: keyword.id } }))!
+      .lastSuccessfulCheckAt;
+    expect(successAt).not.toBeNull();
+
+    // 2. Every attempt of the next check comes back 40102 / items null.
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        calls += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status_code: 20000,
+            status_message: 'Ok.',
+            tasks: [
+              {
+                status_code: 40102,
+                status_message: 'No Search Results.',
+                data: { keyword: 'serp unavailable probe', depth: 50 },
+                result: [{ se_results_count: 165, pages_count: 5, items_count: 0, items: null }],
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }),
+    );
+
+    const second = await runOne('integration-serp-unavailable');
+
+    // The run reports the keyword as failed, so it can simply be run again.
+    // This run has one keyword and nothing succeeded, so it is FAILED rather
+    // than PARTIAL — the same rule the pipeline already used for every other
+    // kind of failure.
+    expect(second.status).toBe('FAILED');
+    expect(second.failedKeywords).toBe(1);
+    expect(calls).toBe(2); // one attempt plus the one configured retry
+
+    // The stored row records the attempt, not a ranking.
+    const rows = await prisma.ranking.findMany({
+      where: { keywordId: keyword.id },
+      orderBy: { checkedAt: 'asc' },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].status).toBe('RANKED');
+    expect(rows[0].position).toBe(7);
+    expect(rows[1].status).toBe('SERP_UNAVAILABLE');
+    expect(rows[1].position).toBeNull();
+    expect(rows[1].position).not.toBe(0);
+    expect(rows[1].apiStatusCode).toBe(40102);
+    expect(rows[1].apiStatusMessage).toBe('No Search Results.');
+    expect(rows[1].attempts).toBe(2);
+    expect(rows[1].resultsChecked).toBeNull();
+
+    // The dashboard still reads #7 — the measurement that was actually made —
+    // and says so alongside the failure.
+    const afterSecond = (await getKeywordRows(projectId)).find((r) => r.id === keyword.id)!;
+    expect(afterSecond.position).toBe(7);
+    expect(afterSecond.serpStatus).toBe('SERP_UNAVAILABLE');
+    expect(afterSecond.apiStatusCode).toBe(40102);
+    // Not "Lost", which is what a null position here used to produce.
+    expect(calculatePositionChange(afterSecond.position, afterSecond.previousPosition).kind).not.toBe(
+      'lost',
+    );
+
+    // And "when did we last actually see this SERP?" still points at the check
+    // that read one.
+    const keywordAfter = await prisma.keyword.findUnique({ where: { id: keyword.id } });
+    expect(keywordAfter!.lastSuccessfulCheckAt?.toISOString()).toBe(successAt?.toISOString());
+
+    await prisma.keyword.delete({ where: { id: keyword.id } });
   });
 });

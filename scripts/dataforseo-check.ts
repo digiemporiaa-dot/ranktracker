@@ -68,11 +68,25 @@ async function main() {
   console.log();
 
   const startedAt = Date.now();
-  const organic = await fetchSerp(lookup, 'dataforseo-check');
-  const result = await checkKeywordRanking(lookup, organic, 'dataforseo-check');
+  const outcome = await fetchSerp(lookup, 'dataforseo-check');
+  const result = await checkKeywordRanking(lookup, outcome, 'dataforseo-check');
   const durationMs = Date.now() - startedAt;
+  const organic = outcome.organic;
 
-  console.log(`Received ${organic.length} organic results in ${durationMs} ms.`);
+  console.log(`Status: ${result.status} after ${result.attempts} attempt(s) in ${durationMs} ms.`);
+  if (result.apiStatusCode !== null) {
+    console.log(`DataForSEO status: ${result.apiStatusCode} ${result.apiStatusMessage ?? ''}`);
+  }
+
+  if (result.status === 'SERP_UNAVAILABLE') {
+    console.log();
+    console.log('DataForSEO returned no search results page for this keyword.');
+    console.log('The application would store position = null with status SERP_UNAVAILABLE,');
+    console.log('keep the previous measured position in the history, and ask you to re-run.');
+    return;
+  }
+
+  console.log(`Received ${organic.length} organic results.`);
   console.log();
   console.log('Top 10 organic results:');
   for (const item of organic.slice(0, 10)) {

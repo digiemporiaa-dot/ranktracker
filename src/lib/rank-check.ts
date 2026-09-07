@@ -5,7 +5,12 @@ import type { Device, Keyword, Project } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { checkKeywordRanking, DataForSeoError } from '@/lib/dataforseo';
+import {
+  apiErrorResult,
+  checkKeywordRanking,
+  DataForSeoError,
+  type RankingResult,
+} from '@/lib/dataforseo';
 import { fetchSerpCached, pruneSerpCache } from '@/lib/serp-cache';
 import type { CountryCode, LanguageCode } from '@/config/serp';
 
@@ -17,6 +22,11 @@ import type { CountryCode, LanguageCode } from '@/config/serp';
  * after every keyword, which is what the dashboard polls.
  *
  * Rankings are always inserted, never updated: history is append-only.
+ *
+ * A check that could not read the SERP is recorded too, with the status that
+ * says so and a null position. It never overwrites the last measured position:
+ * "we did not see the SERP" and "the site does not rank" are different facts
+ * and the dashboard reads them from `Ranking.status`, not from a null.
  */
 
 type RunnableKeyword = Pick<
@@ -62,6 +72,51 @@ export async function startRankCheck(opts: {
   );
 
   return rankCheck.id;
+}
+
+/**
+ * Append one check to a keyword's history.
+ *
+ * The configuration is written onto the ranking as well as being implied by
+ * the keyword, so a stored position can always be read back with the device
+ * and location it was actually measured on.
+ *
+ * `lastSuccessfulCheckAt` moves only when a SERP was genuinely read, which is
+ * what makes "when did we last actually see this keyword's results?"
+ * answerable after an outage.
+ */
+async function recordRanking(opts: {
+  keyword: Pick<RunnableKeyword, 'id' | 'device' | 'locationCode' | 'googleDomain'>;
+  rankCheckId: string;
+  result: RankingResult;
+}): Promise<void> {
+  const { keyword, rankCheckId, result } = opts;
+  const checkedAt = new Date();
+
+  await prisma.ranking.create({
+    data: {
+      keywordId: keyword.id,
+      rankCheckId,
+      status: result.status,
+      position: result.position,
+      rankingUrl: result.rankingUrl,
+      resultsChecked: result.resultsChecked,
+      apiStatusCode: result.apiStatusCode,
+      apiStatusMessage: result.apiStatusMessage,
+      attempts: result.attempts,
+      device: keyword.device,
+      locationCode: keyword.locationCode,
+      googleDomain: keyword.googleDomain,
+      checkedAt,
+    },
+  });
+
+  if (result.status === 'RANKED' || result.status === 'NOT_RANKED') {
+    await prisma.keyword.update({
+      where: { id: keyword.id },
+      data: { lastSuccessfulCheckAt: checkedAt },
+    });
+  }
 }
 
 async function runRankCheck(opts: {
@@ -120,41 +175,58 @@ async function runRankCheck(opts: {
           results: depth,
         };
 
-        const { organic, cached } = await fetchSerpCached(lookup, requestId);
-        const result = await checkKeywordRanking(lookup, organic, requestId);
+        const { outcome, cached } = await fetchSerpCached(lookup, requestId);
+        const result = await checkKeywordRanking(lookup, outcome, requestId);
 
-        // The configuration is written onto the ranking as well as being
-        // implied by the keyword, so a stored position can always be read back
-        // with the device and location it was actually measured on.
-        await prisma.ranking.create({
-          data: {
-            keywordId: keyword.id,
+        await recordRanking({ keyword, rankCheckId, result });
+
+        // A SERP we could not read is not a completed check. Counting it as
+        // failed is what makes the run PARTIAL (or FAILED when nothing
+        // succeeded), tells the user to run it again, and leaves the previous
+        // position standing.
+        if (result.status === 'SERP_UNAVAILABLE') {
+          failed += 1;
+          logger.warn('keyword serp unavailable', {
+            requestId,
             rankCheckId,
-            position: result.position,
-            rankingUrl: result.rankingUrl,
-            resultsChecked: result.resultsChecked,
+            projectId: project.id,
+            keywordId: keyword.id,
+            status: result.status,
+            apiStatusCode: result.apiStatusCode,
+            attempts: result.attempts,
             device: keyword.device,
             locationCode: keyword.locationCode,
-            googleDomain: keyword.googleDomain,
-            checkedAt: new Date(),
-          },
-        });
-
-        completed += 1;
-        logger.info('keyword checked', {
-          requestId,
-          rankCheckId,
-          projectId: project.id,
-          keywordId: keyword.id,
-          status: 'ok',
-          position: result.position,
-          device: keyword.device,
-          locationCode: keyword.locationCode,
-          cached,
-          durationMs: Date.now() - keywordStartedAt,
-        });
+            durationMs: Date.now() - keywordStartedAt,
+          });
+        } else {
+          completed += 1;
+          logger.info('keyword checked', {
+            requestId,
+            rankCheckId,
+            projectId: project.id,
+            keywordId: keyword.id,
+            status: result.status,
+            position: result.position,
+            device: keyword.device,
+            locationCode: keyword.locationCode,
+            cached,
+            attempts: result.attempts,
+            durationMs: Date.now() - keywordStartedAt,
+          });
+        }
       } catch (error) {
         failed += 1;
+
+        // The call never completed: record the attempt so the failure is
+        // visible in the UI instead of looking like a keyword nobody checked.
+        // Still a null position — an API error is not a ranking either.
+        await recordRanking({
+          keyword,
+          rankCheckId,
+          result: apiErrorResult(error),
+        }).catch((writeError) =>
+          logger.warn('api error row not written', { requestId, error: writeError }),
+        );
 
         // Credential and billing failures will fail for every remaining
         // keyword too — stop the run rather than burn through the queue.

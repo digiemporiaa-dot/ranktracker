@@ -60,7 +60,7 @@ export type LogContext = {
   projectId?: string;
   keywordId?: string;
   rankCheckId?: string;
-  status?: string | number;
+  status?: string | number | null;
   durationMs?: number;
   error?: unknown;
   [key: string]: unknown;

@@ -190,6 +190,7 @@ All of these are **server-side only**. None may be prefixed with `NEXT_PUBLIC_`.
 | `MAX_KEYWORDS_PER_CHECK` | no       | `500`   | Hard cap on one ranking check                          |
 | `SERP_RESULTS`           | no       | `100`   | Organic results to inspect (DataForSEO allows up to 700) |
 | `SERP_CACHE_MINUTES`     | no       | `30`    | SERP cache lifetime; `0` disables caching              |
+| `SERP_EMPTY_RETRIES`     | no       | `3`     | Re-asks after an empty SERP (40102); waits 2s, 5s, 10s |
 
 The application validates this configuration at startup and refuses to run with
 an invalid one. The error names only the offending variables, never their values.
@@ -226,8 +227,22 @@ docker compose up -d db
 | `RankCheck` | One ranking run: status, totals and progress                            |
 | `SerpCache` | Short-lived cache of SERP responses                                     |
 
-`Ranking.position` is nullable: `null` means the domain was not found within the
-checked results, and is displayed as **Not Found**.
+`Ranking.status` says what a row is, and `Ranking.position` is only a position
+when it is a measurement:
+
+| `status`           | Meaning                                                    | `position` |
+| ------------------ | ---------------------------------------------------------- | ---------- |
+| `RANKED`           | A SERP was read; the domain was in it                       | 1..depth   |
+| `NOT_RANKED`       | A SERP was read; the domain was not in it — **Not Found**   | `null`     |
+| `SERP_UNAVAILABLE` | The provider returned no SERP (40102 / `items: null`)       | `null`     |
+| `API_ERROR`        | Auth, billing, network or request failure                   | `null`     |
+
+The last two are attempts, not observations. They are never read as a position
+and never as rank 0: a keyword that ranked #7 and whose next check comes back
+40102 still reads **#7**, with a warning beside it, and its 7 stays in the
+history. `Keyword.lastSuccessfulCheckAt` records when a SERP was last actually
+read, and `Ranking.apiStatusCode` / `apiStatusMessage` / `attempts` record what
+the provider said when one was not.
 
 Indexes exist on `Project.userId`, `Keyword.projectId`, `Ranking.keywordId`,
 `Ranking.checkedAt`, `RankCheck.projectId` and `RankCheck.status`, along with
@@ -341,6 +356,15 @@ language shipped, and `LANGUAGES` in the same file is where you add more.
 - Transient failures (network errors, timeouts, HTTP 408/429/5xx, DataForSEO
   status codes in the 50000 range) are retried up to 3 times with exponential
   backoff.
+- An **empty SERP** — task status 40102 "No Search Results.", or `items: null` /
+  `items_count: 0` — is retried `SERP_EMPTY_RETRIES` times, waiting 2s, then 5s,
+  then 10s. If every attempt comes back empty the check is recorded as
+  `SERP_UNAVAILABLE` and counted as failed, so the run reports it and can simply
+  be run again. Note that a v3 response reports two statuses: the envelope says
+  whether the *request* ran, the task says whether it produced a SERP. The task
+  is the one that decides.
+- An unavailable SERP is never cached: one 40102 must not become half an hour of
+  them.
 - Authentication, billing and invalid-request failures are **not** retried, and
   abort the whole run rather than burning credits on every remaining keyword.
 - SERP responses are cached for `SERP_CACHE_MINUTES`, keyed by keyword, country,
@@ -355,7 +379,7 @@ npm test                  # unit tests — no database, no network
 npm run test:integration  # end-to-end pipeline against a real database
 ```
 
-Unit tests (104) cover:
+Unit tests cover:
 
 - **Domain matching** — `wroffy.com`, `www.`, `blog.` and `shop.` subdomains
   match; `fakewroffy.com`, `wroffy.com.fake.com` and `example.com/wroffy.com`
@@ -368,6 +392,12 @@ Unit tests (104) cover:
   column, target URLs, special characters, large files, and formula injection.
 - **DataForSEO transport** — request shape, Basic auth, what is and is not
   retried, and that credentials never appear in a request body or a thrown error.
+- **SERP outcome** — domain at #1 and #10, domain absent, a 40102 followed by a
+  success, 40102 on every attempt, `items: null`, `items_count: 0`, an AI
+  Overview and a People Also Ask block above the organic results, `www` vs bare
+  domain, the 2s/5s/10s retry schedule, and that an unavailable SERP produces
+  neither rank 0 nor `NOT_RANKED`. The integration suite adds the end-to-end
+  case: a keyword at #7 whose next check returns 40102 still reads #7.
 - **Logging** — that secrets are redacted from log lines.
 
 Integration tests drive the real pipeline against PostgreSQL with only the
@@ -454,6 +484,7 @@ SERP_CONCURRENCY=3
 MAX_KEYWORDS_PER_CHECK=500
 SERP_RESULTS=100
 SERP_CACHE_MINUTES=30
+SERP_EMPTY_RETRIES=3
 ```
 
 Never prefix any of these with `NEXT_PUBLIC_` — that would publish them to the

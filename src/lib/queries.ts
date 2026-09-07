@@ -16,7 +16,12 @@ import {
  * A keyword with just its latest and previous ranking.
  *
  * The full ranking history is never loaded for a listing — the LATERAL joins
- * below fetch exactly two rows per keyword.
+ * below fetch exactly three rows per keyword.
+ *
+ * "Latest" means the latest *measured* ranking: a check that could not read
+ * the SERP is not a measurement and must not displace one. A keyword that
+ * ranked #7 and whose last check came back 40102 still reads #7 here, and the
+ * failed attempt is reported separately as `serpStatus`.
  */
 export type KeywordRow = {
   id: string;
@@ -34,6 +39,14 @@ export type KeywordRow = {
   checkedAt: Date | null;
   previousPosition: number | null;
   previousCheckedAt: Date | null;
+  /** Status of the most recent attempt, measured or not. Null if never run. */
+  serpStatus: string | null;
+  /** When that attempt ran — which can be later than `checkedAt`. */
+  lastAttemptAt: Date | null;
+  /** Provider status code behind a failed attempt, e.g. 40102. */
+  apiStatusCode: number | null;
+  /** Provider status message behind a failed attempt. */
+  apiStatusMessage: string | null;
 };
 
 type RawKeywordRow = Omit<KeywordRow, 'position' | 'previousPosition'> & {
@@ -58,12 +71,21 @@ export async function getKeywordRows(projectId: string): Promise<KeywordRow[]> {
       latest."rankingUrl"         AS "rankingUrl",
       latest."checkedAt"          AS "checkedAt",
       previous."position"         AS "previousPosition",
-      previous."checkedAt"        AS "previousCheckedAt"
+      previous."checkedAt"        AS "previousCheckedAt",
+      attempt."status"            AS "serpStatus",
+      attempt."checkedAt"         AS "lastAttemptAt",
+      attempt."apiStatusCode"     AS "apiStatusCode",
+      attempt."apiStatusMessage"  AS "apiStatusMessage"
     FROM "Keyword" k
+    -- The two position columns come from measured rows only. A
+    -- SERP_UNAVAILABLE or API_ERROR row is an attempt, not an observation:
+    -- letting one through here is exactly how an outage would be shown as a
+    -- lost ranking.
     LEFT JOIN LATERAL (
       SELECT r."position", r."rankingUrl", r."checkedAt"
       FROM "Ranking" r
       WHERE r."keywordId" = k."id"
+        AND r."status"::text IN ('RANKED', 'NOT_RANKED')
       ORDER BY r."checkedAt" DESC, r."id" DESC
       LIMIT 1
     ) latest ON TRUE
@@ -71,10 +93,20 @@ export async function getKeywordRows(projectId: string): Promise<KeywordRow[]> {
       SELECT r."position", r."checkedAt"
       FROM "Ranking" r
       WHERE r."keywordId" = k."id"
+        AND r."status"::text IN ('RANKED', 'NOT_RANKED')
       ORDER BY r."checkedAt" DESC, r."id" DESC
       OFFSET 1
       LIMIT 1
     ) previous ON TRUE
+    -- The most recent attempt of any kind, so a failed check is still visible
+    -- rather than silently dropped.
+    LEFT JOIN LATERAL (
+      SELECT r."status"::text AS "status", r."checkedAt", r."apiStatusCode", r."apiStatusMessage"
+      FROM "Ranking" r
+      WHERE r."keywordId" = k."id"
+      ORDER BY r."checkedAt" DESC, r."id" DESC
+      LIMIT 1
+    ) attempt ON TRUE
     WHERE k."projectId" = ${projectId}
     ORDER BY k."createdAt" ASC
   `;
@@ -84,6 +116,7 @@ export async function getKeywordRows(projectId: string): Promise<KeywordRow[]> {
     locationCode: Number(row.locationCode),
     position: row.position === null ? null : Number(row.position),
     previousPosition: row.previousPosition === null ? null : Number(row.previousPosition),
+    apiStatusCode: row.apiStatusCode === null ? null : Number(row.apiStatusCode),
   }));
 }
 
@@ -187,6 +220,10 @@ export function toTableRows(rows: RankingTableRow[]) {
     rankingUrl: row.rankingUrl,
     checkedAt: row.checkedAt ? row.checkedAt.toISOString() : null,
     previousPosition: row.previousPosition,
+    // The last attempt travels with the row so the table can say "we could not
+    // read this SERP" instead of showing the stale position as if it were new.
+    serpStatus: row.serpStatus,
+    lastAttemptAt: row.lastAttemptAt ? row.lastAttemptAt.toISOString() : null,
     changeKind: row.changeKind,
     changeDelta: row.changeDelta,
     changeLabel: row.changeLabel,

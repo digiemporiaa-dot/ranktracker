@@ -22,6 +22,24 @@ enum Device {
   MOBILE
 }
 
+/// The outcome of one ranking check.
+///
+/// RANKED and NOT_RANKED are measurements: a SERP was read. SERP_UNAVAILABLE
+/// and API_ERROR are not — they record that we tried and could not see the
+/// SERP, which says nothing at all about the website. Keeping them apart is
+/// what stops a provider outage from being written into the history as a lost
+/// ranking.
+enum SerpStatus {
+  /// A SERP was read and the tracked domain was in it. `position` is set.
+  RANKED
+  /// A SERP was read and the tracked domain was not in it. `position` is null.
+  NOT_RANKED
+  /// The provider returned no SERP (status 40102 / items null) after retries.
+  SERP_UNAVAILABLE
+  /// Auth, billing, network or request failure — the call never completed.
+  API_ERROR
+}
+
 enum RankCheckStatus {
   PENDING
   RUNNING
@@ -101,22 +119,25 @@ model Project {
 }
 
 model Keyword {
-  id           String   @id @default(cuid())
-  projectId    String
-  keyword      String
-  targetUrl    String?
-  country      String   @default("IN")
+  id                    String    @id @default(cuid())
+  projectId             String
+  keyword               String
+  targetUrl             String?
+  country               String    @default("IN")
   /// Optional. Null means this keyword is checked at country level.
-  city         String?
+  city                  String?
   /// The location actually sent to DataForSEO. Resolved server-side.
-  locationCode Int      @default(2356)
+  locationCode          Int       @default(2356)
   /// The Google property actually searched for this keyword.
-  googleDomain String   @default("google.com")
-  language     String   @default("en")
-  device       Device   @default(DESKTOP)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  googleDomain          String    @default("google.com")
+  language              String    @default("en")
+  device                Device    @default(DESKTOP)
+  active                Boolean   @default(true)
+  /// When a SERP was last actually read for this keyword — RANKED or
+  /// NOT_RANKED, never an attempt that failed. Null until the first one.
+  lastSuccessfulCheckAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   rankings Ranking[]
@@ -134,22 +155,32 @@ model Keyword {
 }
 
 model Ranking {
-  id             String   @id @default(cuid())
-  keywordId      String
-  /// 1..depth, or null when the domain was not found in the checked results.
-  position       Int?
-  rankingUrl     String?
-  /// Total organic results inspected for this check.
-  resultsChecked Int?
+  id               String     @id @default(cuid())
+  keywordId        String
+  /// What this row is: a measurement, or a failed attempt. Read `position`
+  /// only when this is RANKED or NOT_RANKED.
+  status           SerpStatus @default(NOT_RANKED)
+  /// 1..depth when RANKED. Null for every other status — including when the
+  /// SERP could not be read, which is not a position of zero.
+  position         Int?
+  rankingUrl       String?
+  /// Total organic results inspected. Null when no SERP was read at all.
+  resultsChecked   Int?
+  /// DataForSEO status code of the last attempt, e.g. 20000 or 40102.
+  apiStatusCode    Int?
+  /// DataForSEO status message of the last attempt, e.g. "No Search Results.".
+  apiStatusMessage String?
+  /// How many provider requests this row cost, including retries.
+  attempts         Int?
   /// Where this position came from, copied from the keyword at check time so a
   /// recorded position can always be read back with its own configuration
   /// rather than whatever the keyword happens to say later.
-  device         Device
-  locationCode   Int
-  googleDomain   String
-  rankCheckId    String?
-  checkedAt      DateTime @default(now())
-  createdAt      DateTime @default(now())
+  device           Device
+  locationCode     Int
+  googleDomain     String
+  rankCheckId      String?
+  checkedAt        DateTime   @default(now())
+  createdAt        DateTime   @default(now())
 
   keyword   Keyword    @relation(fields: [keywordId], references: [id], onDelete: Cascade)
   rankCheck RankCheck? @relation(fields: [rankCheckId], references: [id], onDelete: SetNull)
@@ -158,6 +189,9 @@ model Ranking {
   @@index([checkedAt])
   @@index([keywordId, checkedAt])
   @@index([keywordId, device, checkedAt])
+  // The dashboard reads the latest *measured* row per keyword, skipping over
+  // any failed attempts on top of it.
+  @@index([keywordId, status, checkedAt])
   @@index([rankCheckId])
 }
 

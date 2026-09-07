@@ -172,3 +172,66 @@ export function toDataForSeoDevice(device: DeviceCode): 'desktop' | 'mobile' {
 export const DEPTH_OPTIONS = [10, 20, 50, 100] as const;
 export const DEFAULT_DEPTH = 100;
 export const MAX_DEPTH = 700;
+
+/* -------------------------------------------------------------------------
+ * SERP outcome
+ *
+ * A ranking check has four possible outcomes, and they are not
+ * interchangeable. In particular "we could not read the SERP" is not the same
+ * fact as "the site does not rank": the first says nothing at all about the
+ * website, the second is a measurement.
+ * ---------------------------------------------------------------------- */
+
+export const SERP_STATUSES = [
+  /** A SERP was read and the tracked domain was found in it. */
+  'RANKED',
+  /** A SERP was read and the tracked domain was not in it. */
+  'NOT_RANKED',
+  /** The provider returned no SERP (e.g. 40102) after every retry. */
+  'SERP_UNAVAILABLE',
+  /** Auth, billing, network or request failure — the call never completed. */
+  'API_ERROR',
+] as const;
+
+export type SerpStatus = (typeof SERP_STATUSES)[number];
+
+/**
+ * The statuses that carry an actual observation of the SERP.
+ *
+ * Only these may be read as a position: a row with any other status records an
+ * attempt, not a measurement, and must never displace a real one.
+ */
+export const MEASURED_SERP_STATUSES: SerpStatus[] = ['RANKED', 'NOT_RANKED'];
+
+export function isMeasuredSerpStatus(status: string | null | undefined): boolean {
+  return status === 'RANKED' || status === 'NOT_RANKED';
+}
+
+export function serpStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'RANKED':
+      return 'Ranked';
+    case 'NOT_RANKED':
+      return 'Not ranking';
+    case 'SERP_UNAVAILABLE':
+      return 'SERP unavailable';
+    case 'API_ERROR':
+      return 'Check failed';
+    default:
+      return 'Not checked';
+  }
+}
+
+/**
+ * Coerce a depth to something DataForSEO actually accepts.
+ *
+ * The provider reads `depth` in whole result pages: it rounds up to the next
+ * multiple of 10 and rejects anything outside 10..700. Sending 55 quietly
+ * becomes 60 and costs a page more than intended, so we round here instead and
+ * the depth we log is the depth that was searched.
+ */
+export function normalizeDepth(depth: number): number {
+  if (!Number.isFinite(depth)) return DEFAULT_DEPTH;
+  const bounded = Math.min(Math.max(Math.trunc(depth), 10), MAX_DEPTH);
+  return Math.ceil(bounded / 10) * 10;
+}

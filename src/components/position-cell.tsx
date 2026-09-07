@@ -1,10 +1,42 @@
-import { ArrowDown, ArrowUp, Minus, Sparkles, TrendingDown } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Minus, Sparkles, TrendingDown } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { ChangeKind } from '@/lib/ranking';
+import { isMeasuredSerpStatus } from '@/config/serp';
 
-export function PositionCell({ position }: { position: number | null }) {
+/**
+ * A position, or an honest account of why there is not one.
+ *
+ * `position` is the last *measured* position and `serpStatus` is the outcome of
+ * the last attempt, which can be later. When the last attempt could not read
+ * the SERP the two disagree, and saying so is the point: a keyword at #7 whose
+ * latest check came back 40102 shows #7 with a warning, never "Not Found".
+ */
+export function PositionCell({
+  position,
+  serpStatus,
+}: {
+  position: number | null;
+  serpStatus?: string | null;
+}) {
+  const attemptFailed = serpStatus != null && !isMeasuredSerpStatus(serpStatus);
+
   if (position === null) {
+    if (attemptFailed) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 text-sm text-warning"
+          title={
+            serpStatus === 'SERP_UNAVAILABLE'
+              ? 'The search provider returned no results page for this keyword. This is not a ranking — run the check again.'
+              : 'The ranking check could not be completed. This is not a ranking — run the check again.'
+          }
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {serpStatus === 'SERP_UNAVAILABLE' ? 'SERP unavailable' : 'Check failed'}
+        </span>
+      );
+    }
     return <span className="text-sm text-muted-foreground">Not Found</span>;
   }
 
@@ -16,13 +48,21 @@ export function PositionCell({ position }: { position: number | null }) {
         : 'bg-secondary text-secondary-foreground';
 
   return (
-    <span
-      className={cn(
-        'inline-flex min-w-[3rem] items-center justify-center rounded-md px-2 py-1 text-sm font-semibold tabular-nums',
-        tone,
-      )}
-    >
-      #{position}
+    <span className="inline-flex items-center gap-1">
+      <span
+        className={cn(
+          'inline-flex min-w-[3rem] items-center justify-center rounded-md px-2 py-1 text-sm font-semibold tabular-nums',
+          tone,
+        )}
+      >
+        #{position}
+      </span>
+      {attemptFailed ? (
+        <AlertTriangle
+          className="h-3.5 w-3.5 shrink-0 text-warning"
+          aria-label="The latest check could not read the SERP. This is the last position we actually measured."
+        />
+      ) : null}
     </span>
   );
 }

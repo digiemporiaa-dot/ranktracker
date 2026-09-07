@@ -28,6 +28,10 @@
     --success: 152 62% 36%;
     --success-foreground: 0 0% 100%;
 
+    /* "We do not know" — a failed SERP read, which is neither good nor bad. */
+    --warning: 38 92% 40%;
+    --warning-foreground: 0 0% 100%;
+
     --border: 214 20% 91%;
     --input: 214 20% 91%;
     --ring: 221 83% 53%;

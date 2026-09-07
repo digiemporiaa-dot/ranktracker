@@ -25,6 +25,12 @@ const schema = z.object({
   MAX_KEYWORDS_PER_CHECK: intFromEnv(500, 1, 5000),
   SERP_RESULTS: intFromEnv(100, 10, 700),
   SERP_CACHE_MINUTES: intFromEnv(30, 0, 1440),
+  /**
+   * How many times to re-ask DataForSEO after it answers with an empty SERP
+   * (status 40102 / `items: null`). 0 disables the retries entirely; the first
+   * attempt always happens, so 3 means at most 4 requests for one keyword.
+   */
+  SERP_EMPTY_RETRIES: intFromEnv(3, 0, 5),
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
@@ -40,6 +46,7 @@ function load() {
     MAX_KEYWORDS_PER_CHECK: process.env.MAX_KEYWORDS_PER_CHECK,
     SERP_RESULTS: process.env.SERP_RESULTS,
     SERP_CACHE_MINUTES: process.env.SERP_CACHE_MINUTES,
+    SERP_EMPTY_RETRIES: process.env.SERP_EMPTY_RETRIES,
     NODE_ENV: process.env.NODE_ENV,
   });
 

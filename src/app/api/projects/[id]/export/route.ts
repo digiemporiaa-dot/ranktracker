@@ -2,6 +2,7 @@ import { requireProject, requireUser, route } from '@/lib/api';
 import { listQuerySchema } from '@/lib/validation';
 import { applyFilters, decorate, getKeywordRows } from '@/lib/queries';
 import { toCsv } from '@/lib/csv';
+import { serpStatusLabel } from '@/config/serp';
 import { logger } from '@/lib/logger';
 
 type Params = { params: Promise<{ id: string }> };
@@ -50,6 +51,7 @@ export async function GET(request: Request, { params }: Params) {
         'google_domain',
         'position',
         'change',
+        'last_check',
         'target_url',
         'ranking_url',
         'checked_at',
@@ -62,6 +64,9 @@ export async function GET(request: Request, { params }: Params) {
         row.googleDomain,
         row.position ?? 'Not Found',
         row.changeDelta ?? (row.changeKind === 'none' ? '' : row.changeLabel),
+        // The outcome of the most recent attempt. A position exported next to
+        // "SERP unavailable" is the last one measured, not a fresh reading.
+        serpStatusLabel(row.serpStatus),
         row.targetUrl ?? '',
         row.rankingUrl ?? '',
         row.checkedAt ? row.checkedAt.toISOString() : '',

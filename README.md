@@ -417,13 +417,35 @@ change label and history row is correct, that a partial failure is recorded as
 ## Docker
 
 ```bash
-cp .env.example .env       # set SESSION_SECRET and DataForSEO credentials
+cp .env.example .env       # set SESSION_SECRET, POSTGRES_PASSWORD and DataForSEO credentials
 docker compose up --build
 ```
 
 This starts PostgreSQL and the application on <http://localhost:3000>.
 Migrations are applied automatically on startup; set `RUN_MIGRATIONS=0` to skip
 that.
+
+`.env` sits next to `docker-compose.yml` and is git-ignored. It is the only
+place credentials belong — never a commit, and never a pull request.
+
+**Set `POSTGRES_PASSWORD` before the first start.** PostgreSQL reads it only
+when it initialises its data directory, so changing it later has no effect on a
+database that already exists. To rotate it on a running deployment, change it in
+the database first and then in `.env`:
+
+```bash
+docker compose exec db psql -U ourranktracker -c "ALTER USER ourranktracker PASSWORD 'new-password';"
+# then set POSTGRES_PASSWORD=new-password in .env
+docker compose up -d
+```
+
+The database port is published on `127.0.0.1` only, so `psql` and Prisma Studio
+work on the host while the database stays unreachable from the internet. On a
+remote host, reach it through an SSH tunnel rather than by opening the port:
+
+```bash
+ssh -L 5432:127.0.0.1:5432 user@your-vps
+```
 
 The image is a multi-stage build producing the Next.js standalone server,
 running as a non-root user, with a health check against `/api/health`.

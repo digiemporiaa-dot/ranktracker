@@ -4,13 +4,19 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ourranktracker
-      POSTGRES_PASSWORD: ourranktracker
+      # Set POSTGRES_PASSWORD in the .env file next to this compose file before
+      # the first start. Postgres only reads it when it initialises the data
+      # directory, so changing it later does nothing to an existing database —
+      # that needs an ALTER USER (see README).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ourranktracker}
       POSTGRES_DB: ourranktracker
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      # Exposed for local tooling (psql, Prisma Studio). Drop this in production.
-      - '5432:5432'
+      # Bound to the loopback interface, not 0.0.0.0. Local tooling (psql,
+      # Prisma Studio) still works, and on a public host the database is not
+      # reachable from the internet — reach it over an SSH tunnel instead.
+      - '127.0.0.1:5432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ourranktracker -d ourranktracker']
       interval: 5s
@@ -26,7 +32,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://ourranktracker:ourranktracker@db:5432/ourranktracker?schema=public
+      DATABASE_URL: postgresql://ourranktracker:${POSTGRES_PASSWORD:-ourranktracker}@db:5432/ourranktracker?schema=public
       # Override these in a .env file next to this compose file.
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET, e.g. openssl rand -base64 48}
       DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
